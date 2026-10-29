@@ -86,6 +86,15 @@ def test_overwrite_import_keeps_learning_records(repo, review):
     assert len(review.history(vid)) == 1
 
 
+def test_all_states(repo, review):
+    a = add(repo, "A")
+    add(repo, "B")
+    review.record_answer(a, CORRECT, now=DAY1)
+    states = review.all_states()
+    assert list(states) == [a]
+    assert states[a].mastery == "学習中"
+
+
 def test_deleting_vocab_deletes_its_records(repo, review):
     vid = add(repo)
     review.record_answer(vid, CORRECT, now=DAY1)

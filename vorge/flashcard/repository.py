@@ -114,6 +114,12 @@ class ReviewRepository:
             ).fetchone()
         return ReviewState(**dict(row)) if row else None
 
+    def all_states(self) -> dict[int, ReviewState]:
+        """語彙ID → 習得状況 の辞書(一覧表示用。未学習の語彙は含まれない)。"""
+        with self._connect() as conn:
+            rows = conn.execute("SELECT * FROM review_state").fetchall()
+        return {r["vocab_id"]: ReviewState(**dict(r)) for r in rows}
+
     def history(self, vocab_id: int) -> list[dict]:
         """1 語彙の学習履歴(新しい順)。"""
         with self._connect() as conn:
