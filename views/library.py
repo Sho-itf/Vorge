@@ -17,9 +17,11 @@ from vorge.ui.components import (
 )
 from vorge.vocab.models import Vocab
 from vorge.vocab.repository import SORT_OPTIONS, VocabRepository
+from vorge.writing.repository import WritingRepository
 
 repo = VocabRepository()
 review_repo = ReviewRepository()
+writing_repo = WritingRepository()
 ss = st.session_state
 
 # session_state:画面を再描画しても値を覚えておくための入れ物
@@ -160,6 +162,8 @@ def detail_dialog(vocab_id: int, categories: list[str]) -> None:
 
     else:
         vocab_card(vocab, review_repo.get_state(vocab.id))
+        used = writing_repo.usage_count(vocab.id)
+        st.caption(f"✍️ 作文で使った回数:{used} 回" if used else "✍️ まだ作文で使っていません")
         c1, c2, _ = st.columns([1, 1, 2])
         if c1.button("✏️ 編集", type="primary", width="stretch"):
             ss.dialog_mode = "edit"

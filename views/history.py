@@ -8,8 +8,10 @@ import streamlit as st
 
 from vorge.flashcard import scheduler, session
 from vorge.history.repository import HistoryRepository
+from vorge.writing.repository import WritingRepository
 
 repo = HistoryRepository()
+writing_repo = WritingRepository()
 today = date.today()
 
 # 回答結果の色(状態を表す色。正解=緑、自信がない=黄、不正解=赤)。凡例とツールチップで文字でも区別できる
@@ -63,7 +65,7 @@ week_start = today - timedelta(days=6)
 recent = repo.accuracy_between(week_start, today)
 previous = repo.accuracy_between(week_start - timedelta(days=7), week_start - timedelta(days=1))
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3, c4, c5 = st.columns(5)
 with c1.container(border=True):
     st.metric("連続学習日数", f"{repo.streak(today)} 日", help="今日(まだなら昨日)まで毎日続いている日数")
 with c2.container(border=True):
@@ -81,6 +83,12 @@ with c3.container(border=True):
     st.metric("学習した語彙", f"{repo.studied_vocab_count()} 語")
 with c4.container(border=True):
     st.metric("総回答数", f"{repo.total_answers()} 回")
+with c5.container(border=True):
+    st.metric(
+        "作文",
+        f"{writing_repo.count_writings()} 本",
+        help=f"作文トレーニングで保存した作文の数(書いた日数:{writing_repo.count_writing_days()} 日)",
+    )
 
 # ---------- 日ごとの回答数 ----------
 st.write("")
