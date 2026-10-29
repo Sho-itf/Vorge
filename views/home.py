@@ -72,8 +72,8 @@ features = [
      "CSV からの一括登録と、バックアップ用の書き出し", True),
     ("views/flashcard.py", "フラッシュカード", ":material/style:",
      "意味を隠して覚えているか確認し、復習日を自動で決める", True),
-    ("views/home.py", "学習履歴(準備中)", ":material/insights:",
-     "回答記録と次回の復習日を確認する", False),
+    ("views/history.py", "学習履歴", ":material/insights:",
+     "回答数・正答率の推移と、苦手な語彙を確認する", True),
 ]
 cols = st.columns(len(features))
 for col, (page, label, icon, desc, enabled) in zip(cols, features):

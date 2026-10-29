@@ -31,6 +31,7 @@ pages = {
     "メニュー": [
         st.Page("views/home.py", title="ホーム", icon=":material/home:", default=True),
         st.Page("views/flashcard.py", title="フラッシュカード", icon=":material/style:"),
+        st.Page("views/history.py", title="学習履歴", icon=":material/insights:"),
         st.Page("views/library.py", title="語彙ライブラリ", icon=":material/menu_book:"),
         st.Page("views/csv_io.py", title="CSV入出力", icon=":material/swap_vert:"),
     ],
@@ -42,7 +43,7 @@ with st.sidebar:
     st.caption("準備中の機能")
     st.markdown(
         "<div style='opacity:0.5;line-height:2'>"
-        "📈 学習履歴<br>✍️ 文章トレーニング"
+        "✍️ 文章トレーニング"
         "</div>",
         unsafe_allow_html=True,
     )
