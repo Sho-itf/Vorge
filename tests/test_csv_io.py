@@ -1,8 +1,14 @@
 import pytest
 
 from vorge import config
-from vorge.vocab.csv_io import CsvFormatError, export_csv, parse_csv
-from vorge.vocab.models import Vocab
+from vorge.vocab.csv_io import (
+    CsvFormatError,
+    export_csv,
+    find_content_duplicates,
+    parse_csv,
+    template_csv,
+)
+from vorge.vocab.models import CSV_COLUMNS, Vocab
 
 HEADER = "id,word,reading,meaning,category,difficulty\n"
 
@@ -86,4 +92,24 @@ def test_export_roundtrip():
 def test_seed_csv_is_valid():
     result = parse_csv(config.SEED_CSV_PATH.read_bytes())
     assert not result.errors
-    assert len(result.rows) == 99
+    assert len(result.rows) == 200
+
+
+def test_find_content_duplicates():
+    text = (
+        "word,meaning\n"
+        "俯瞰,全体を見渡すこと\n"  # 2行目: 登録済みと同じ
+        "俯瞰,物事を広い視点で見ること\n"  # 3行目: 同じ語彙・違う意味 → 重複ではない
+        "洞察,本質を見抜く\n"  # 4行目: 新規
+        "洞察,本質を見抜く\n"  # 5行目: 4行目と同じ
+    )
+    rows = parse_csv(text.encode()).rows
+    dups = find_content_duplicates(rows, {("俯瞰", "全体を見渡すこと"): 7})
+    assert [(d.line, d.existing_id, d.first_line) for d in dups] == [(2, 7, None), (5, None, 4)]
+
+
+def test_template_has_header_only():
+    data = template_csv()
+    assert data.startswith(b"\xef\xbb\xbf")
+    lines = data.decode("utf-8-sig").splitlines()
+    assert lines == [",".join(CSV_COLUMNS)]

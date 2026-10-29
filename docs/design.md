@@ -43,7 +43,7 @@ Vorge/
 ├─ docs/design.md          … この設計メモ
 ├─ data/                   … SQLiteのDBファイル(自動作成、Git管理外)
 ├─ .streamlit/config.toml  … Streamlitの設定
-├─ vorge_vocab_seed.csv    … サンプル語彙(99語)
+├─ csv/vorge_vocab_seed.csv … サンプル語彙(200語)
 ├─ requirements.txt / pyproject.toml / .gitignore / .env.example
 ```
 

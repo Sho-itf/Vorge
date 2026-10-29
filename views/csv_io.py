@@ -10,7 +10,14 @@ import pandas as pd
 import streamlit as st
 
 from vorge import config
-from vorge.vocab.csv_io import CsvFormatError, ParseResult, export_csv, parse_csv
+from vorge.vocab.csv_io import (
+    CsvFormatError,
+    ParseResult,
+    export_csv,
+    find_content_duplicates,
+    parse_csv,
+    template_csv,
+)
 from vorge.vocab.models import CSV_COLUMNS, FIELD_LABELS, REQUIRED_COLUMNS
 from vorge.vocab.repository import VocabRepository
 
@@ -48,19 +55,34 @@ def show_result_message() -> None:
 
 
 def show_preview(result: ParseResult, source_name: str) -> None:
-    """検証結果を表示し、「インポートを実行」ボタンを出す。"""
+    """検証結果を表示し、「インポートを実行」ボタンを出す。
+
+    行の分類:
+      - ID重複     … ID が登録済み → 既定はスキップ(上書きインポートで更新)
+      - 内容が重複 … 語彙と意味が登録済み(またはファイル内の前の行)と同じ → 既定はスキップ
+      - 新規       … 上のどれでもない行
+    """
     ids_in_file = [r.vocab.id for r in result.rows if r.vocab.id is not None]
     existing = repo.get_many(ids_in_file)
     duplicates = [r for r in result.rows if r.vocab.id in existing]
-    new_rows = [r for r in result.rows if r.vocab.id not in existing]
+    candidates = [r for r in result.rows if r.vocab.id not in existing]
+
+    pairs = repo.word_meaning_pairs()
+    content_dups = find_content_duplicates(candidates, {(w, m): i for i, w, m in pairs})
+    content_dup_lines = {d.line for d in content_dups}
+    new_rows = [r for r in candidates if r.line not in content_dup_lines]
+    # 同じ語彙で意味が違うもの(多義語)は、知らせるだけで普通に追加する
+    registered_words = {w for _, w, _ in pairs}
+    homonyms = [r for r in new_rows if r.vocab.word in registered_words]
 
     st.markdown(f"#### ② 検証結果:`{source_name}`")
     st.caption(f"文字コード: {result.encoding}")
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("データ行", result.total_rows)
     c2.metric("新規登録できる行", len(new_rows))
-    c3.metric("既存IDと重複", len(duplicates))
-    c4.metric("エラー行", len(result.errors))
+    c3.metric("内容が重複", len(content_dups), help="語彙と意味が登録済みの語彙と同じ行")
+    c4.metric("既存IDと重複", len(duplicates))
+    c5.metric("エラー行", len(result.errors))
 
     for w in result.warnings:
         st.warning(w)
@@ -106,6 +128,50 @@ def show_preview(result: ParseResult, source_name: str) -> None:
             "将来の学習履歴は保持されます。",
         )
 
+    add_content_dups = False
+    if content_dups:
+        st.warning(
+            f"**{len(content_dups)} 行は、語彙と意味が登録済みの語彙(またはこのファイルの前の行)と同じです。**"
+            "そのままではこれらの行は**スキップ**されます(同じ語彙が二重に登録されるのを防ぐため)。"
+        )
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "行番号": [d.line for d in content_dups],
+                    "語彙": [d.vocab.word for d in content_dups],
+                    "意味": [d.vocab.meaning for d in content_dups],
+                    "同じもの": [
+                        f"登録済み(ID {d.existing_id})"
+                        if d.existing_id is not None
+                        else f"このファイルの {d.first_line} 行目"
+                        for d in content_dups
+                    ],
+                }
+            ),
+            hide_index=True,
+            width="stretch",
+        )
+        add_content_dups = st.checkbox(
+            "重複していても追加する",
+            help="例文や出典だけが違う別エントリとして登録したい場合に使います。",
+        )
+
+    if homonyms:
+        with st.expander(
+            f"ℹ️ 同じ語彙で意味が違うものが登録済みの行:{len(homonyms)} 件(別の意味として追加されます)"
+        ):
+            st.dataframe(
+                pd.DataFrame(
+                    {
+                        "行番号": [r.line for r in homonyms],
+                        "語彙": [r.vocab.word for r in homonyms],
+                        "CSVの意味": [r.vocab.meaning for r in homonyms],
+                    }
+                ),
+                hide_index=True,
+                width="stretch",
+            )
+
     if new_rows:
         with st.expander(f"新規登録される語彙のプレビュー({len(new_rows)} 件)"):
             st.dataframe(
@@ -123,21 +189,27 @@ def show_preview(result: ParseResult, source_name: str) -> None:
                 width="stretch",
             )
 
+    n_new = len(new_rows) + (len(content_dups) if add_content_dups else 0)
     n_update = len(duplicates) if overwrite else 0
-    n_skip = 0 if overwrite else len(duplicates)
+    n_skip = (0 if overwrite else len(duplicates)) + (0 if add_content_dups else len(content_dups))
     st.markdown("#### ③ 実行")
-    st.write(f"新規 **{len(new_rows)}** 件 / 更新 **{n_update}** 件 / スキップ **{n_skip}** 件")
+    st.write(f"新規 **{n_new}** 件 / 更新 **{n_update}** 件 / スキップ **{n_skip}** 件")
 
     if st.button(
         "インポートを実行",
         type="primary",
-        disabled=(len(new_rows) + n_update == 0),
+        disabled=(n_new + n_update == 0),
     ):
+        # ID重複の行は import_vocabs が overwrite に従って更新/スキップを決める。
+        # 内容が重複した行は、ここで渡すかどうかを決める
+        rows = [r for r in result.rows if add_content_dups or r.line not in content_dup_lines]
         try:
-            done = repo.import_vocabs([r.vocab for r in result.rows], overwrite=overwrite)
+            done = repo.import_vocabs([r.vocab for r in rows], overwrite=overwrite)
         except Exception as e:
             st.error(f"保存中にエラーが発生したため、すべて取り消しました。\n\n詳細: {e}")
             return
+        if not add_content_dups:
+            done.skipped += len(content_dups)
         st.session_state.import_done = done
         st.session_state.uploader_version += 1  # アップロード欄を空に戻す
         st.rerun()
@@ -149,6 +221,19 @@ with tab_import:
     show_format_help()
 
     st.markdown("#### ① ファイルを選ぶ")
+    c1, c2 = st.columns([3, 1], vertical_alignment="center")
+    c1.caption(
+        "新しい語彙を追加するときは、テンプレートに追加分だけを書き込み、"
+        "`id` を空欄のまま取り込むのがおすすめです(番号は自動で振られます)。"
+    )
+    c2.download_button(
+        "📄 テンプレートCSV",
+        data=template_csv(),
+        file_name="vorge_template.csv",
+        mime="text/csv",
+        width="stretch",
+        help="列名だけが入った空の CSV です。Excel で開いて書き込めます。",
+    )
     choices = ["CSVファイルをアップロード"]
     if config.SEED_CSV_PATH.exists():
         choices.append(f"同梱のサンプル語彙({config.SEED_CSV_PATH.name})")
