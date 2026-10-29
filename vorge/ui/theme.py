@@ -72,6 +72,17 @@ div[class*="st-key-vrow-"]:hover { background: rgba(128, 128, 128, 0.06); }
 .vg-list-ex + .vg-list-ex { margin-top: 0.2rem; }
 .vg-muted { opacity: 0.4; }
 
+/* 作文トレーニング */
+div.vg-card.vg-prompt p.vg-prompt-text {
+    font-size: 1.45rem; font-weight: 700; line-height: 1.6; margin: 0.5rem 0 0;
+}
+div.vg-card.vg-wordcard { padding: 0.9rem 1.1rem; height: 100%; }
+.vg-essay {
+    white-space: pre-wrap; line-height: 1.9; padding: 0.8rem 1rem; margin: 0.4rem 0 0.8rem;
+    border-left: 3px solid rgba(99, 102, 241, 0.5); background: rgba(128, 128, 128, 0.06);
+    border-radius: 6px;
+}
+
 /* ホーム画面の機能カード */
 .vg-feature-desc { opacity: 0.7; font-size: 0.9rem; min-height: 2.8em; }
 </style>

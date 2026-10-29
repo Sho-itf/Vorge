@@ -10,11 +10,13 @@ from typing import Iterator
 
 from vorge import config
 from vorge.vocab.models import DEFAULT_CATEGORIES
+from vorge.writing.prompts import DEFAULT_PROMPTS
 
 # テーブル構造を変えるときにこの数字を上げ、init_db() に移行処理を追加する
 #   1: vocab, categories
 #   2: review_state, study_log(フラッシュカード・学習履歴)
-SCHEMA_VERSION = 2
+#   3: app_settings, writing_prompts, writings, writing_vocab(作文トレーニング)
+SCHEMA_VERSION = 3
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS categories (
@@ -73,6 +75,48 @@ CREATE TABLE IF NOT EXISTS study_log (
 );
 CREATE INDEX IF NOT EXISTS idx_log_vocab ON study_log(vocab_id);
 CREATE INDEX IF NOT EXISTS idx_log_studied_at ON study_log(studied_at);
+
+-- アプリの設定(前回選んだ出題条件など)を「名前 → 値」で保存する
+CREATE TABLE IF NOT EXISTS app_settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+-- 作文のお題(kind: daily / explain / opinion)
+CREATE TABLE IF NOT EXISTS writing_prompts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind       TEXT NOT NULL,
+    text       TEXT NOT NULL,
+    active     INTEGER NOT NULL DEFAULT 1,   -- 0 なら出題しない
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
+-- 書いた作文。お題の文面は書いた時点のものを保存する(お題を編集・削除しても残る)
+CREATE TABLE IF NOT EXISTS writings (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    prompt_id   INTEGER REFERENCES writing_prompts(id) ON DELETE SET NULL,
+    prompt_text TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    min_chars   INTEGER NOT NULL,
+    max_chars   INTEGER NOT NULL,
+    body        TEXT NOT NULL,
+    char_count  INTEGER NOT NULL,
+    feedback    TEXT NOT NULL DEFAULT '',     -- 添削結果のメモ
+    created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_writings_created_at ON writings(created_at);
+
+-- 作文で使うよう指定された語彙(used: 本文で実際に使えたか)
+-- 語彙を削除するとこの対応だけが消え、作文そのものは残る
+CREATE TABLE IF NOT EXISTS writing_vocab (
+    writing_id INTEGER NOT NULL REFERENCES writings(id) ON DELETE CASCADE,
+    vocab_id   INTEGER NOT NULL REFERENCES vocab(id) ON DELETE CASCADE,
+    word       TEXT NOT NULL,                 -- 書いた時点の語彙(表示用)
+    used       INTEGER NOT NULL,
+    PRIMARY KEY (writing_id, vocab_id)
+);
+CREATE INDEX IF NOT EXISTS idx_writing_vocab_vocab ON writing_vocab(vocab_id);
 """
 
 
@@ -109,8 +153,20 @@ def init_db(db_path: Path | None = None) -> None:
             "INSERT OR IGNORE INTO categories (name, sort_order) VALUES (?, ?)",
             [(name, i) for i, name in enumerate(DEFAULT_CATEGORIES)],
         )
+        # 作文のお題の初期セット。一度だけ登録する(ユーザーが削除したお題を復活させないため)
+        seeded = conn.execute(
+            "SELECT 1 FROM app_settings WHERE key = 'writing_prompts_seeded'"
+        ).fetchone()
+        if not seeded:
+            conn.executemany(
+                "INSERT INTO writing_prompts (kind, text) VALUES (?, ?)",
+                [(kind, text) for kind, texts in DEFAULT_PROMPTS.items() for text in texts],
+            )
+            conn.execute(
+                "INSERT INTO app_settings (key, value) VALUES ('writing_prompts_seeded', '1')"
+            )
         current = conn.execute("PRAGMA user_version").fetchone()[0]
         if current < SCHEMA_VERSION:
-            # 1 → 2 は新しいテーブルの追加だけなので、上の CREATE TABLE IF NOT EXISTS で完了。
+            # 1 → 2 → 3 は新しいテーブルの追加だけなので、上の CREATE TABLE IF NOT EXISTS で完了。
             # 既存の列を変えるような変更が必要になったら、ここに移行処理(ALTER TABLE など)を書く
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")

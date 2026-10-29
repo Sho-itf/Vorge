@@ -72,6 +72,8 @@ features = [
      "CSV からの一括登録と、バックアップ用の書き出し", True),
     ("views/flashcard.py", "フラッシュカード", ":material/style:",
      "意味を隠して覚えているか確認し、復習日を自動で決める", True),
+    ("views/writing.py", "作文トレーニング", ":material/edit_note:",
+     "お題と指定の語彙で文章を書き、使い方を身につける", True),
     ("views/history.py", "学習履歴", ":material/insights:",
      "回答数・正答率の推移と、苦手な語彙を確認する", True),
 ]
