@@ -19,6 +19,7 @@ Vorge/
 ├─ app.py                  … 起動ファイル。DB初期化とサイドバーのナビゲーション
 ├─ views/                  … 画面(1ファイル = 1ページ)
 │   ├─ home.py             … ホーム
+│   ├─ flashcard.py        … フラッシュカード
 │   ├─ library.py          … 語彙ライブラリ(検索・一覧・詳細・追加・編集・削除)
 │   └─ csv_io.py           … CSV入出力
 ├─ vorge/                  … アプリ本体のロジック(Streamlitに依存しない部分)
@@ -28,6 +29,9 @@ Vorge/
 │   │   ├─ models.py       … 語彙データの形(Vocab)と入力チェック
 │   │   ├─ repository.py   … 語彙のDB操作(追加・検索・更新・削除・一括取り込み)
 │   │   └─ csv_io.py       … CSVの読み込み・検証・書き出し
+│   ├─ flashcard/          … フラッシュカード機能
+│   │   ├─ scheduler.py    … 間隔反復の計算ルール(DB・画面に依存しない)
+│   │   └─ repository.py   … 習得状況・学習履歴のDB操作、出題の選択
 │   └─ ui/                 … 画面間で共通の部品
 │       ├─ theme.py        … 余白・フォントなどのCSS
 │       └─ components.py   … 語彙カード、入力フォーム、通知など
@@ -42,7 +46,6 @@ Vorge/
 将来の追加予定(今回は作らない):
 
 ```
-vorge/flashcard/   … 出題選択・間隔反復の計算        views/flashcard.py
 vorge/history/     … 学習履歴の保存・集計            views/history.py
 vorge/writing/     … 文章トレーニング               views/writing.py
 vorge/reading/     … 読解トレーニング               views/reading.py
@@ -72,28 +75,40 @@ vorge/ai/          … AI添削(APIキーは .env から読む)
 
 **categories**(カテゴリ候補)… 初期値10件+ユーザーが追加したもの。
 
-### 将来追加するテーブル(設計のみ)
+### 第2段階で追加したテーブル(スキーマバージョン 2)
 
-```sql
--- 語彙ごとの現在の習得状況(1語彙につき1行)
-CREATE TABLE review_state (
-  vocab_id      INTEGER PRIMARY KEY REFERENCES vocab(id) ON DELETE CASCADE,
-  interval_days INTEGER NOT NULL DEFAULT 1,
-  next_review   TEXT,           -- 次回復習日
-  streak        INTEGER NOT NULL DEFAULT 0
-);
--- 回答のたびに1行追加する学習履歴
-CREATE TABLE study_log (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  vocab_id    INTEGER NOT NULL REFERENCES vocab(id) ON DELETE CASCADE,
-  studied_at  TEXT NOT NULL,
-  result      TEXT NOT NULL,    -- correct / unsure / wrong
-  self_rating INTEGER,
-  next_review TEXT
-);
-```
+**review_state**(語彙ごとの現在の習得状況。1 語彙 1 行。未学習の語彙には行が無い)
 
-間隔反復: 正解 → interval×2.5(切り上げ)/ 自信がない → 据え置き / 不正解 → 1日。
+| 列 | 説明 |
+|---|---|
+| vocab_id | vocab.id(主キー、語彙削除時のみ連鎖削除) |
+| interval_days | 現在の復習間隔(日) |
+| next_review | 次回復習日(YYYY-MM-DD) |
+| review_count / correct_count / unsure_count / wrong_count | 回答回数の内訳 |
+| last_result / last_studied_at | 最後の回答 |
+
+**study_log**(回答のたびに 1 行追加する学習履歴)
+
+| 列 | 説明 |
+|---|---|
+| vocab_id | 語彙ID |
+| studied_at | 学習日時 |
+| mode | word_to_meaning / meaning_to_word |
+| result | correct / unsure / wrong(回答結果 = 3 段階の自己評価) |
+| self_rating | 将来の細かい自己評価(1〜5)用。現在は未使用 |
+| interval_days / next_review | この回答で決まった間隔と次回復習日 |
+
+### 間隔反復のルール(`vorge/flashcard/scheduler.py`)
+
+| 回答 | 次の間隔 |
+|---|---|
+| 正解 | 今の間隔 × 2.5(切り上げ、上限 365 日)。初回は 1 日扱い → 3 → 8 → 20 … |
+| 自信がない | 据え置き |
+| 不正解 | 1 日(翌日) |
+
+習得状況: 未学習 / 学習中(7日未満)/ 定着中(7〜20日)/ 習得(21日以上)。
+
+出題順: 復習日が今日以前の語彙(古い順)→ 未学習の語彙(指定数まで)。シャッフルしてもこの優先順は保つ。
 
 ### 学習履歴を守るための工夫
 

@@ -3,11 +3,13 @@
 import pandas as pd
 import streamlit as st
 
+from vorge.flashcard.repository import ReviewRepository
 from vorge.ui.components import set_flash, stars, vocab_card, vocab_form
 from vorge.vocab.models import Vocab
 from vorge.vocab.repository import SORT_OPTIONS, VocabRepository
 
 repo = VocabRepository()
+review_repo = ReviewRepository()
 
 # session_state:画面を再描画しても値を覚えておくための入れ物
 st.session_state.setdefault("selected_id", None)  # 詳細表示中の語彙ID
@@ -18,7 +20,7 @@ st.session_state.setdefault("add_form_version", 0)  # 追加フォームを空�
 @st.dialog("語彙を削除")
 def confirm_delete(vocab: Vocab) -> None:
     st.write(f"「**{vocab.word}**」(ID {vocab.id})を削除します。")
-    st.warning("この操作は取り消せません。")
+    st.warning("この語彙のフラッシュカードの学習記録も一緒に削除されます。この操作は取り消せません。")
     c1, c2 = st.columns(2)
     if c1.button("削除する", type="primary", width="stretch"):
         repo.delete(vocab.id)
@@ -145,7 +147,7 @@ with tab_list:
                 st.rerun()
 
         else:
-            vocab_card(selected)
+            vocab_card(selected, review_repo.get_state(selected.id))
             c1, c2 = st.columns(2)
             if c1.button("✏️ 編集", width="stretch"):
                 st.session_state.editing = True

@@ -40,7 +40,18 @@ _CSS = """
     border-radius: 6px; font-size: 0.88rem;
     border: 1px solid rgba(128, 128, 128, 0.3);
 }
+.vg-badge-sub { background: rgba(16, 185, 129, 0.16); }
 .vg-stars { color: #f59e0b; letter-spacing: 0.05em; }
+
+/* フラッシュカードの問題面 */
+.stApp .vg-card.vg-flash {
+    min-height: 220px; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; text-align: center;
+}
+.stApp .vg-card .vg-flash-text {
+    font-size: 2.6rem; font-weight: 700; line-height: 1.4; margin: 0.4rem 0;
+}
+.stApp .vg-card.vg-flash .vg-flash-text.vg-long { font-size: 1.5rem; }
 .stApp .vg-card .vg-meta { font-size: 0.78rem; opacity: 0.5; margin-top: 1rem; }
 
 /* ホーム画面の機能カード */

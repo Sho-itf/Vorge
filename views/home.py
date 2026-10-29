@@ -5,9 +5,11 @@ from html import escape
 
 import streamlit as st
 
+from vorge.flashcard.repository import ReviewRepository
 from vorge.vocab.repository import VocabRepository
 
 repo = VocabRepository()
+review_repo = ReviewRepository()
 total = repo.count()
 
 st.title("📚 Vorge")
@@ -27,22 +29,37 @@ if total == 0:
     st.write("")
 
 # ---------- 今日の状況 ----------
+today = date.today()
+due = review_repo.count_due(today)
+
 st.subheader("今日の状況")
-c1, c2, c3 = st.columns(3)
+c1, c2, c3, c4 = st.columns(4)
 with c1.container(border=True):
-    st.metric("登録語彙数", f"{total} 語")
-with c2.container(border=True):
-    st.metric(
-        "今日追加した語彙",
-        f"{repo.count_added_on(date.today())} 語",
-        help="今日ライブラリに登録した語彙の数です。",
-    )
-with c3.container(border=True):
     st.metric(
         "今日の復習予定",
-        "—",
-        help="フラッシュカード機能を実装すると表示されます。",
+        f"{due} 語",
+        help="復習日が今日以前になっている語彙の数です。",
     )
+with c2.container(border=True):
+    st.metric(
+        "今日の新規学習",
+        f"{review_repo.count_new_studied_on(today)} 語",
+        help="今日フラッシュカードではじめて学習した語彙の数です。",
+    )
+with c3.container(border=True):
+    st.metric("登録語彙数", f"{total} 語")
+with c4.container(border=True):
+    st.metric(
+        "今日追加した語彙",
+        f"{repo.count_added_on(today)} 語",
+        help="今日ライブラリに登録した語彙の数です。",
+    )
+
+if total > 0:
+    message = f"今日の復習が {due} 語あります。" if due else "今日の復習はありません。新しい語彙を覚えましょう。"
+    c1, c2 = st.columns([3, 1])
+    c1.info(message, icon="🃏")
+    c2.page_link("views/flashcard.py", label="フラッシュカードを始める", icon=":material/play_arrow:")
 
 st.write("")
 
@@ -53,8 +70,8 @@ features = [
      "語彙の検索・閲覧・追加・編集・削除", True),
     ("views/csv_io.py", "CSV入出力", ":material/swap_vert:",
      "CSV からの一括登録と、バックアップ用の書き出し", True),
-    ("views/home.py", "フラッシュカード(準備中)", ":material/style:",
-     "意味を隠して覚えているか確認する", False),
+    ("views/flashcard.py", "フラッシュカード", ":material/style:",
+     "意味を隠して覚えているか確認し、復習日を自動で決める", True),
     ("views/home.py", "学習履歴(準備中)", ":material/insights:",
      "回答記録と次回の復習日を確認する", False),
 ]
