@@ -1,0 +1,4 @@
+[tool.pytest.ini_options]
+# tests/ から "import vorge" できるようにする
+pythonpath = ["."]
+testpaths = ["tests"]
