@@ -40,6 +40,21 @@ def stars(level: int) -> str:
     return "★" * level + "☆" * (DIFFICULTY_MAX - level)
 
 
+def ruby_html(word: str, reading: str) -> str:
+    """語彙の上に読みをふりがなとして載せた HTML(<ruby> タグ)。読みが無ければ語彙だけ。"""
+    if not reading:
+        return escape(word)
+    return f"<ruby>{escape(word)}<rt>{escape(reading)}</rt></ruby>"
+
+
+def highlight_html(text: str, word: str) -> str:
+    """文中に出てくる語彙を太字にした HTML(例文で使い方を見つけやすくする)。"""
+    escaped = escape(text)
+    if not word:
+        return escaped
+    return escaped.replace(escape(word), f"<b>{escape(word)}</b>")
+
+
 def flash_front(text: str, sub: str = "", label: str = "") -> None:
     """フラッシュカードの問題面(大きな文字で 1 つだけ表示する)。"""
     size = " vg-long" if len(text) > 12 else ""  # 意味のような長い文は少し小さく
@@ -66,8 +81,7 @@ def vocab_card(v: Vocab, review: ReviewState | None = None, show_meta: bool = Tr
         f'<span class="vg-badge">{e(v.category)}</span>'
         f'<span class="vg-badge vg-badge-sub">{mastery}</span>'
         f'<span class="vg-stars" title="難易度 {v.difficulty}">{stars(v.difficulty)}</span>',
-        f'<p class="vg-word">{e(v.word)}</p>',
-        f'<p class="vg-reading">{e(v.reading)}</p>' if v.reading else "",
+        f'<p class="vg-word">{ruby_html(v.word, v.reading)}</p>',
         f'<p class="vg-meaning">{e(v.meaning)}</p>',
     ]
 
