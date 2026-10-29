@@ -26,4 +26,4 @@ def _resolve(path_str: str) -> Path:
 DB_PATH = _resolve(os.getenv("VORGE_DB_PATH", "data/vorge.db"))
 
 # 同梱のサンプル語彙CSV
-SEED_CSV_PATH = BASE_DIR / "vorge_vocab_seed.csv"
+SEED_CSV_PATH = BASE_DIR / "csv" / "vorge_vocab_seed.csv"

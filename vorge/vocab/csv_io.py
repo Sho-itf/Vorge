@@ -164,6 +164,42 @@ def _parse_row(
     return vocab
 
 
+@dataclass
+class ContentDuplicate:
+    """語彙と意味の組み合わせが、登録済みの語彙かファイル内の前の行と同じ行。"""
+
+    line: int
+    vocab: Vocab
+    existing_id: int | None = None  # 登録済みの語彙と同じ場合、その ID
+    first_line: int | None = None  # ファイル内の前の行と同じ場合、その行番号
+
+
+def find_content_duplicates(
+    rows: list[ParsedRow], registered: dict[tuple[str, str], int]
+) -> list[ContentDuplicate]:
+    """「語彙」と「意味」が両方とも同じ行を探す。
+
+    registered は (語彙, 意味) → 登録済みの ID の辞書。
+    同じ語彙でも意味が違えば(多義語・同音異義語)重複とはみなさない。
+    """
+    seen: dict[tuple[str, str], int] = {}  # (語彙, 意味) → ファイル内で最初に出てきた行番号
+    duplicates = []
+    for r in rows:
+        key = (r.vocab.word, r.vocab.meaning)
+        if key in registered:
+            duplicates.append(ContentDuplicate(r.line, r.vocab, existing_id=registered[key]))
+        elif key in seen:
+            duplicates.append(ContentDuplicate(r.line, r.vocab, first_line=seen[key]))
+        else:
+            seen[key] = r.line
+    return duplicates
+
+
+def template_csv() -> bytes:
+    """列名(ヘッダー)だけが入った、新しい語彙を書き込むための CSV。"""
+    return export_csv([])
+
+
 def export_csv(vocabs: list[Vocab]) -> bytes:
     """語彙一覧を UTF-8 with BOM の CSV に変換する(Excel で開いても文字化けしない)。"""
     buffer = io.StringIO(newline="")

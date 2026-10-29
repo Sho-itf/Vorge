@@ -154,6 +154,12 @@ class VocabRepository:
                 found.update(r["id"] for r in rows)
         return found
 
+    def word_meaning_pairs(self) -> list[tuple[int, str, str]]:
+        """登録済みの全語彙の (id, 語彙, 意味)。CSV 取り込み時の重複チェックに使う。"""
+        with self._connect() as conn:
+            rows = conn.execute("SELECT id, word, meaning FROM vocab").fetchall()
+        return [(r["id"], r["word"], r["meaning"]) for r in rows]
+
     def get_many(self, ids: list[int]) -> dict[int, Vocab]:
         """id → Vocab の辞書を返す(存在しない id は含まれない)。"""
         result: dict[int, Vocab] = {}

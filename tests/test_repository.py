@@ -80,3 +80,8 @@ def test_import_without_id_autonumbers(repo):
     result = repo.import_vocabs([make(), make()])
     assert result.inserted == 2
     assert repo.count() == 2
+
+
+def test_word_meaning_pairs(repo):
+    vid = repo.add(make(word="俯瞰", meaning="全体を見渡すこと"))
+    assert repo.word_meaning_pairs() == [(vid, "俯瞰", "全体を見渡すこと")]
