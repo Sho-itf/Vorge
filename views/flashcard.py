@@ -1,11 +1,7 @@
 """フラッシュカード画面:設定 → 出題(答えを確認して自己採点)→ 結果。
 
-画面の状態は session_state に保存している:
-  fc_queue    … 今回出題する語彙IDの並び(None なら設定画面)
-  fc_pos      … 今何枚目か(0 始まり)
-  fc_revealed … 答えを表示中かどうか
-  fc_mode     … 出題モード
-  fc_results  … 回答の記録(結果画面で使う)
+画面の状態(今何枚目か、答えを表示中か など)は session_state に保存している。
+項目の一覧は vorge/flashcard/session.py を参照。
 """
 
 from datetime import date
@@ -13,7 +9,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from vorge.flashcard import scheduler
+from vorge.flashcard import scheduler, session
 from vorge.flashcard.repository import ReviewRepository
 from vorge.ui.components import flash_front, vocab_card
 from vorge.vocab.repository import VocabRepository
@@ -21,23 +17,7 @@ from vorge.vocab.repository import VocabRepository
 vocab_repo = VocabRepository()
 review_repo = ReviewRepository()
 ss = st.session_state
-ss.setdefault("fc_queue", None)
-ss.setdefault("fc_pos", 0)
-ss.setdefault("fc_revealed", False)
-ss.setdefault("fc_mode", scheduler.MODE_WORD_TO_MEANING)
-ss.setdefault("fc_results", [])
-
-
-def start_session(queue: list[int], mode: str) -> None:
-    ss.fc_queue = queue
-    ss.fc_pos = 0
-    ss.fc_revealed = False
-    ss.fc_mode = mode
-    ss.fc_results = []
-
-
-def back_to_settings() -> None:
-    ss.fc_queue = None
+session.init(ss)
 
 
 # ============ 設定画面 ============
@@ -91,7 +71,7 @@ def show_settings() -> None:
             )
         if st.button("▶ 学習をはじめる", type="primary", disabled=total == 0):
             queue = review_repo.build_queue(today, int(new_limit), categories, difficulty, shuffle)
-            start_session(queue, mode)
+            session.start(ss, queue, mode)
             st.rerun()
 
     with st.expander("復習のタイミングのしくみ"):
@@ -112,7 +92,8 @@ def show_card() -> None:
         st.rerun()
 
     state = review_repo.get_state(vocab.id)
-    st.progress(pos / len(queue), text=f"{pos + 1} / {len(queue)} 枚目")
+    label = f"{ss.fc_label} ・ " if ss.fc_label else ""
+    st.progress(pos / len(queue), text=f"{label}{pos + 1} / {len(queue)} 枚目")
 
     if not ss.fc_revealed:
         # 問題面:答えを隠して、語彙(または意味)だけを大きく表示する
@@ -178,7 +159,7 @@ def show_summary() -> None:
 
     c1, c2, _ = st.columns([1, 1, 2])
     if c1.button("設定に戻る", type="primary", width="stretch"):
-        back_to_settings()
+        session.reset(ss)
         st.rerun()
     c2.page_link("views/home.py", label="ホームへ", icon=":material/home:")
 
