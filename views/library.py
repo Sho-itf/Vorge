@@ -30,7 +30,7 @@ ss.setdefault("page", 0)  # 一覧の何ページ目か(0 始まり)
 ss.setdefault("filter_signature", None)  # 絞り込み条件が変わったか判定するための記録
 # 一覧に追加で表示する項目(「表示する項目」メニューで切り替え。初期値はすべて非表示)
 ss.setdefault("show_category", False)
-ss.setdefault("show_difficulty", False)
+ss.setdefault("show_difficulty", True)  # 難易度だけは初期状態で表示
 ss.setdefault("show_mastery", False)
 
 MASTERY_LEVELS = ["未学習", "学習中", "定着中", "習得"]
@@ -47,10 +47,10 @@ def open_detail(vocab_id: int) -> None:
 def list_columns() -> list[tuple[str, float]]:
     """一覧の列(見出し, 幅の比率)。「表示する項目」の設定で列が増える。"""
     columns = [("語彙", 1.4), ("意味", 2.6), ("例文", 3.6)]
+    if ss.show_difficulty:
+        columns.append(("難易度", 0.9))  # 例文のすぐ右
     if ss.show_category:
         columns.append(("カテゴリ", 1.3))
-    if ss.show_difficulty:
-        columns.append(("難易度", 0.9))
     if ss.show_mastery:
         columns.append(("習得状況", 0.8))
     columns.append(("", 0.7))  # 「詳細」ボタン
@@ -237,10 +237,10 @@ with tab_list:
     info.caption(f"{len(results)} 件 / 全 {total} 件 ・ 「詳細」で例文以外の情報や編集・削除ができます")
     with settings.popover("⚙️ 表示する項目", width="stretch"):
         st.caption("一覧に追加で表示する項目")
-        st.checkbox("カテゴリ", key="show_category")
         st.checkbox("難易度", key="show_difficulty")
+        st.checkbox("カテゴリ", key="show_category")
         st.checkbox("習得状況", key="show_mastery")
-        page_size = st.selectbox("1 ページの件数", [25, 50, 100], key="page_size")
+        page_size = st.slider("1 ページの件数", min_value=1, max_value=100, value=25, key="page_size")
 
     if not results:
         st.info("条件に一致する語彙がありません。キーワードや絞り込み条件を変えてみてください。")
