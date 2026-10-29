@@ -1,0 +1,8 @@
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+
+# [theme] の base を指定しないことで、OS の設定に合わせてライト/ダークが切り替わります。
+# 右上メニュー → Settings からも手動で切り替えられます。
