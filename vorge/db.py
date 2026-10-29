@@ -12,7 +12,9 @@ from vorge import config
 from vorge.vocab.models import DEFAULT_CATEGORIES
 
 # テーブル構造を変えるときにこの数字を上げ、init_db() に移行処理を追加する
-SCHEMA_VERSION = 1
+#   1: vocab, categories
+#   2: review_state, study_log(フラッシュカード・学習履歴)
+SCHEMA_VERSION = 2
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS categories (
@@ -42,6 +44,35 @@ CREATE TABLE IF NOT EXISTS vocab (
 CREATE INDEX IF NOT EXISTS idx_vocab_word ON vocab(word);
 CREATE INDEX IF NOT EXISTS idx_vocab_category ON vocab(category);
 CREATE INDEX IF NOT EXISTS idx_vocab_created_at ON vocab(created_at);
+
+-- 語彙ごとの現在の習得状況(1 語彙につき 1 行。まだ学習していない語彙には行が無い)
+-- 語彙を削除したときだけ一緒に消える(ON DELETE CASCADE)。CSV の上書きインポートでは消えない。
+CREATE TABLE IF NOT EXISTS review_state (
+    vocab_id        INTEGER PRIMARY KEY REFERENCES vocab(id) ON DELETE CASCADE,
+    interval_days   INTEGER NOT NULL,
+    next_review     TEXT NOT NULL,   -- 次回復習日(YYYY-MM-DD)
+    review_count    INTEGER NOT NULL DEFAULT 0,
+    correct_count   INTEGER NOT NULL DEFAULT 0,
+    unsure_count    INTEGER NOT NULL DEFAULT 0,
+    wrong_count     INTEGER NOT NULL DEFAULT 0,
+    last_result     TEXT NOT NULL,
+    last_studied_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_review_next ON review_state(next_review);
+
+-- 回答のたびに 1 行ずつ追加していく学習履歴
+CREATE TABLE IF NOT EXISTS study_log (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    vocab_id      INTEGER NOT NULL REFERENCES vocab(id) ON DELETE CASCADE,
+    studied_at    TEXT NOT NULL,     -- 学習日時(YYYY-MM-DD HH:MM:SS)
+    mode          TEXT NOT NULL,     -- word_to_meaning / meaning_to_word
+    result        TEXT NOT NULL,     -- correct / unsure / wrong(回答結果=自己評価)
+    self_rating   INTEGER,           -- 将来の細かい自己評価(1〜5)用。今は未使用
+    interval_days INTEGER NOT NULL,
+    next_review   TEXT NOT NULL      -- この回答で決まった次回復習日
+);
+CREATE INDEX IF NOT EXISTS idx_log_vocab ON study_log(vocab_id);
+CREATE INDEX IF NOT EXISTS idx_log_studied_at ON study_log(studied_at);
 """
 
 
@@ -80,5 +111,6 @@ def init_db(db_path: Path | None = None) -> None:
         )
         current = conn.execute("PRAGMA user_version").fetchone()[0]
         if current < SCHEMA_VERSION:
-            # 将来ここにバージョンごとの移行処理(ALTER TABLE など)を書く
+            # 1 → 2 は新しいテーブルの追加だけなので、上の CREATE TABLE IF NOT EXISTS で完了。
+            # 既存の列を変えるような変更が必要になったら、ここに移行処理(ALTER TABLE など)を書く
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")

@@ -4,6 +4,8 @@ from html import escape
 
 import streamlit as st
 
+from vorge.flashcard.repository import ReviewState
+from vorge.flashcard.scheduler import mastery_label
 from vorge.vocab.models import (
     DEFAULT_DIFFICULTY,
     DIFFICULTY_MAX,
@@ -38,13 +40,31 @@ def stars(level: int) -> str:
     return "★" * level + "☆" * (DIFFICULTY_MAX - level)
 
 
-def vocab_card(v: Vocab) -> None:
-    """語彙 1 件の詳細をカードとして表示する。空の項目は表示しない。"""
+def flash_front(text: str, sub: str = "", label: str = "") -> None:
+    """フラッシュカードの問題面(大きな文字で 1 つだけ表示する)。"""
+    size = " vg-long" if len(text) > 12 else ""  # 意味のような長い文は少し小さく
+    st.markdown(
+        '<div class="vg-card vg-flash">'
+        + (f'<p class="vg-label">{escape(label)}</p>' if label else "")
+        + f'<p class="vg-flash-text{size}">{escape(text)}</p>'
+        + (f'<p class="vg-reading">{escape(sub)}</p>' if sub else "")
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def vocab_card(v: Vocab, review: ReviewState | None = None, show_meta: bool = True) -> None:
+    """語彙 1 件の詳細をカードとして表示する。空の項目は表示しない。
+
+    review を渡すと、習得状況と次回復習日も表示する。
+    """
     e = lambda s: escape(str(s))  # noqa: E731  ユーザー入力を安全に HTML に埋め込む
 
+    mastery = review.mastery if review else mastery_label(None)
     parts = [
         '<div class="vg-card">',
         f'<span class="vg-badge">{e(v.category)}</span>'
+        f'<span class="vg-badge vg-badge-sub">{mastery}</span>'
         f'<span class="vg-stars" title="難易度 {v.difficulty}">{stars(v.difficulty)}</span>',
         f'<p class="vg-word">{e(v.word)}</p>',
         f'<p class="vg-reading">{e(v.reading)}</p>' if v.reading else "",
@@ -70,10 +90,19 @@ def vocab_card(v: Vocab) -> None:
         parts.append(f'<p class="vg-label">{FIELD_LABELS["source"]}</p>')
         parts.append(f'<p class="vg-text">{e(v.source)}</p>')
 
-    parts.append(
-        f'<p class="vg-meta">ID {v.id} ・ 登録 {e(v.created_at or "-")}'
-        f" ・ 更新 {e(v.updated_at or '-')}</p>"
-    )
+    if review:
+        parts.append('<p class="vg-label">学習状況</p>')
+        parts.append(
+            f'<p class="vg-text">次回復習 {e(review.next_review)}(間隔 {review.interval_days}日)'
+            f" ・ 正解 {review.correct_count} / 自信なし {review.unsure_count}"
+            f" / 不正解 {review.wrong_count}</p>"
+        )
+
+    if show_meta:
+        parts.append(
+            f'<p class="vg-meta">ID {v.id} ・ 登録 {e(v.created_at or "-")}'
+            f" ・ 更新 {e(v.updated_at or '-')}</p>"
+        )
     parts.append("</div>")
     st.markdown("".join(parts), unsafe_allow_html=True)
 
