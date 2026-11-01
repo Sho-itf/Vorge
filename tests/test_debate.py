@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from vorge.db import init_db
+from vorge.db import SCHEMA_VERSION, init_db
 from vorge.debate import checker
 from vorge.debate.templates import (
     KIND_DEBATE,
@@ -140,4 +140,4 @@ def test_migration_adds_debate_columns_to_old_db(tmp_path):
     w = WritingRepository(path).list_writings()[0]
     assert w.body == "昔の作文" and w.stance == "" and w.section_texts == {}
     conn = sqlite3.connect(path)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION

@@ -22,6 +22,11 @@ def get_setting(key: str, default: Any = None, db_path: Path | None = None) -> A
         return default
 
 
+def delete_setting(key: str, db_path: Path | None = None) -> None:
+    with get_connection(db_path) as conn:
+        conn.execute("DELETE FROM app_settings WHERE key = ?", (key,))
+
+
 def set_setting(key: str, value: Any, db_path: Path | None = None) -> None:
     with get_connection(db_path) as conn:
         conn.execute(

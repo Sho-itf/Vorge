@@ -18,7 +18,8 @@ from vorge.writing.prompts import DEFAULT_PROMPTS
 #   3: app_settings, writing_prompts, writings, writing_vocab(作文トレーニング)
 #   4: quiz_log(穴埋めクイズ)
 #   5: writings に stance / template / sections 列を追加(議論トレーニング)
-SCHEMA_VERSION = 5
+#   6: quiz_excluded(穴埋めクイズで「おかしい」と報告した例文)
+SCHEMA_VERSION = 6
 
 # 既存のテーブルに後から追加した列(テーブル名 → [(列名, 型と既定値)])。
 # CREATE TABLE IF NOT EXISTS は既存のテーブルを変更しないので、無ければ ALTER TABLE で足す。
@@ -145,6 +146,15 @@ CREATE TABLE IF NOT EXISTS quiz_log (
 );
 CREATE INDEX IF NOT EXISTS idx_quiz_vocab ON quiz_log(vocab_id);
 CREATE INDEX IF NOT EXISTS idx_quiz_answered_at ON quiz_log(answered_at);
+
+-- 穴埋めクイズで「この問題はおかしい」と報告した例文。以後その例文からは出題しない
+CREATE TABLE IF NOT EXISTS quiz_excluded (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    vocab_id   INTEGER NOT NULL REFERENCES vocab(id) ON DELETE CASCADE,
+    sentence   TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    UNIQUE (vocab_id, sentence)
+);
 """
 
 
@@ -200,6 +210,6 @@ def init_db(db_path: Path | None = None) -> None:
             )
         current = conn.execute("PRAGMA user_version").fetchone()[0]
         if current < SCHEMA_VERSION:
-            # 1〜4 は新しいテーブルの追加、5 は列の追加(上の ADDED_COLUMNS の処理)で完了。
+            # 1〜4・6 は新しいテーブルの追加、5 は列の追加(上の ADDED_COLUMNS の処理)で完了。
             # 既存の列を変えるような変更が必要になったら、ここに移行処理(ALTER TABLE など)を書く
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")

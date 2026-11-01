@@ -59,3 +59,10 @@ def test_build_review_prompt_contains_everything():
     text = checker.build_review_prompt("お題A", [("逡巡", "ためらうこと")], "本文です", 100, 200)
     assert "お題A" in text and "逡巡:ためらうこと" in text and "本文です" in text
     assert "100〜200字" in text
+
+
+def test_sentences_with():
+    body = "私は迷った。結局、腑に落ちた。そうだ、ふにおちる瞬間だった。"
+    assert checker.sentences_with(body, "腑に落ちる", "ふにおちる") == [
+        "結局、腑に落ちた。", "そうだ、ふにおちる瞬間だった。"
+    ]

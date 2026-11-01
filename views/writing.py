@@ -1,9 +1,9 @@
 """作文トレーニング画面:お題と語彙を決めて書く → 自動チェック → 保存・添削依頼。
 
 タブ:
-  ✍️ 書く          … お題・語彙を決めて作文し、保存する
-  📚 これまでの作文 … 保存した作文の一覧(添削メモの記入・削除)
-  🗂 お題の管理     … お題の追加・編集・出題のオン/オフ・削除
+  ✍️ 書く               … お題・語彙を決めて作文し、保存する(このファイル)
+  📚 これまでの作文・議論 … vorge/ui/writing_list.py
+  🗂 お題の管理          … vorge/ui/prompt_admin.py
 """
 
 import random
@@ -11,10 +11,10 @@ from html import escape
 
 import streamlit as st
 
-from vorge.debate import checker as debate_checker
-from vorge.debate.templates import KIND_DEBATE, STANCE_LABELS, TEMPLATES
-from vorge.settings import get_setting, set_setting
-from vorge.ui.components import set_flash, vocab_mini_cards
+from vorge.ui.components import html, set_flash, vocab_mini_cards
+from vorge.ui.persist import clear_draft, load_draft, load_settings, save_draft, save_setting
+from vorge.ui.prompt_admin import show_prompt_admin
+from vorge.ui.writing_list import show_saved_list
 from vorge.vocab.repository import VocabRepository
 from vorge.writing import checker
 from vorge.writing import prompts as P
@@ -25,31 +25,25 @@ vocab_repo = VocabRepository()
 ss = st.session_state
 
 # ---------- 出題条件(前回の選択を DB から読み込み、変更したら保存する) ----------
-SETTING_KEYS = {
+load_settings({
     "wr_kind": P.AUTO,
     "wr_length": "standard",
     "wr_vocab_mode": P.AUTO,
     "wr_vocab_count": 2,
-}
-for key, default in SETTING_KEYS.items():
-    if key not in ss:
-        ss[key] = get_setting(key, default)
-    # segmented_control は同じボタンをもう一度押すと選択が外れて None になるので、初期値に戻す
-    if ss[key] is None:
-        ss[key] = default
-
-
-def save_setting(key: str) -> None:
-    if ss[key] is not None:
-        set_setting(key, ss[key])
-
+})
 
 # ---------- 書いている途中の状態 ----------
-ss.setdefault("wr_task", None)  # {"prompt_id", "length", "min", "max", "vocab_ids"}
-ss.setdefault("wr_draft", "")  # 書きかけの本文(画面を移動しても残す)
+# 書きかけ(お題・語彙・本文)は DB にも下書き保存し、ブラウザを閉じても続きから書けるようにする
+if "wr_task" not in ss:
+    draft = load_draft("writing") or {}
+    ss.wr_task = draft.get("task")  # {"prompt_id", "length", "min", "max", "vocab_ids"}
+    ss.wr_draft = draft.get("body", "")  # 書きかけの本文
 ss.setdefault("wr_version", 0)  # 入力欄を作り直すための番号
 ss.setdefault("wr_saved_id", None)  # 保存済みの作文ID(保存後の画面を出すため)
-ss.setdefault("wr_history_limit", 20)
+
+
+def store_draft() -> None:
+    save_draft("writing", {"task": ss.wr_task, "body": ss.wr_draft})
 
 
 def resolve_length(key: str) -> tuple[str, int, int]:
@@ -78,25 +72,25 @@ def new_task() -> None:
     ss.wr_draft = ""
     ss.wr_version += 1
     ss.wr_saved_id = None
+    store_draft()
 
 
 def change_prompt() -> None:
     prompt = repo.random_prompt(ss.wr_kind, exclude_id=ss.wr_task["prompt_id"])
     if prompt:
         ss.wr_task["prompt_id"] = prompt.id
+        store_draft()
 
 
 def change_vocab() -> None:
     current = set(ss.wr_task["vocab_ids"])
     ss.wr_task["vocab_ids"] = repo.pick_vocab(ss.wr_vocab_mode, ss.wr_vocab_count, current)
+    store_draft()
 
 
 def keep_draft() -> None:
     ss.wr_draft = ss[f"wr_body_{ss.wr_version}"]
-
-
-def html(container, body: str) -> None:
-    container.markdown(body, unsafe_allow_html=True)
+    store_draft()
 
 
 # ============ ✍️ 書く ============
@@ -176,7 +170,9 @@ def show_manual_picker(task: dict) -> None:
         placeholder="語彙や読みを入力して検索",
         disabled=bool(ss.wr_saved_id),
     )
-    task["vocab_ids"] = selected
+    if selected != task["vocab_ids"]:
+        task["vocab_ids"] = selected
+        store_draft()
 
 
 def show_check(result: checker.CheckResult, task: dict, n_vocab: int) -> None:
@@ -245,6 +241,7 @@ def show_write_tab() -> None:
     prompt = next((p for p in repo.list_prompts() if p.id == task["prompt_id"]), None)
     if prompt is None:  # お題が削除された場合
         ss.wr_task = None
+        clear_draft("writing")
         st.rerun()
 
     show_task_header(prompt, task)
@@ -270,7 +267,8 @@ def show_write_tab() -> None:
         height=320,
         placeholder="ここに書きます。指定の語彙を使ってみましょう。",
     )
-    st.caption("入力欄の外をクリックするか Ctrl+Enter を押すと、文字数とチェックが更新されます。")
+    st.caption("入力欄の外をクリックするか Ctrl+Enter を押すと、文字数とチェックが更新されます"
+               "(書きかけは自動で下書き保存されます)。")
     show_check(result, task, len(vocabs))
 
     if st.button("💾 保存する", type="primary", disabled=not body.strip() or not vocabs):
@@ -278,141 +276,8 @@ def show_write_tab() -> None:
             prompt, task["min"], task["max"], body, result.char_count,
             [WritingWord(v.id, v.word, result.vocab_used.get(v.word, False)) for v in vocabs],
         )
+        clear_draft("writing")
         st.rerun()
-
-
-# ============ 📚 これまでの作文 ============
-# 一覧の「種類」:作文のお題の種類 + 議論トレーニングで保存したもの
-HISTORY_KIND_LABELS = {**P.KIND_LABELS, KIND_DEBATE: "議論"}
-
-
-def show_writing_body(w) -> None:
-    """保存した作文・議論の本文。議論は欄ごとに見出しを付けて表示する。"""
-    if w.kind == KIND_DEBATE and w.template in TEMPLATES:
-        template = TEMPLATES[w.template]
-        html(st, f'<span class="vg-badge">議論 ・ {escape(template.label)}</span>'
-                 f'<span class="vg-badge vg-badge-sub">{STANCE_LABELS.get(w.stance, w.stance)}</span>')
-        texts = w.section_texts
-        for s in template.sections:
-            html(st, f'<p class="vg-label">{escape(s.label)}</p>'
-                     f'<div class="vg-essay">{escape(texts.get(s.key, ""))}</div>')
-        return
-    html(st, f'<span class="vg-badge">{escape(HISTORY_KIND_LABELS.get(w.kind, w.kind))}</span>'
-             f'<span class="vg-badge vg-badge-sub">目安 {w.min_chars}〜{w.max_chars}字</span>')
-    html(st, f'<div class="vg-essay">{escape(w.body)}</div>')
-
-
-def show_history_tab() -> None:
-    if repo.count_writings() == 0:
-        st.info("まだ保存した作文はありません。「✍️ 書く」タブから書いてみましょう。")
-        return
-
-    c1, c2, c3 = st.columns([2, 2, 1])
-    words = repo.written_vocab()
-    vocab_filter = c1.selectbox(
-        "語彙で絞り込む", [None, *[i for i, _ in words]],
-        format_func=lambda i: "すべて" if i is None else dict(words)[i],
-    )
-    kind_filter = c2.selectbox(
-        "種類", [None, *HISTORY_KIND_LABELS],
-        format_func=lambda k: "すべて" if k is None else HISTORY_KIND_LABELS[k],
-    )
-    writings = repo.list_writings(vocab_filter, kind_filter)
-    c3.metric("件数", f"{len(writings)} 件")
-
-    for w in writings[: ss.wr_history_limit]:
-        marks = " ".join(f"{'✅' if x.used else '⬜'}{x.word}" for x in w.words)
-        title = f"{w.created_at[:10]} ・ {w.prompt_text} ・ {w.char_count}字 ・ {marks}"
-        with st.expander(title):
-            show_writing_body(w)
-
-            with st.form(f"fb_{w.id}"):
-                feedback = st.text_area("添削結果のメモ", value=w.feedback, height=120)
-                if st.form_submit_button("メモを保存"):
-                    repo.update_feedback(w.id, feedback)
-                    set_flash("メモを保存しました")
-                    st.rerun()
-
-            c1, c2, _ = st.columns([1.3, 1, 2])
-            if c1.toggle("添削依頼文を表示", key=f"show_review_{w.id}"):
-                vocab_map = vocab_repo.get_many([x.vocab_id for x in w.words])
-                pairs = [(x.word, vocab_map[x.vocab_id].meaning if x.vocab_id in vocab_map else "")
-                         for x in w.words]
-                if w.kind == KIND_DEBATE:
-                    review = debate_checker.build_review_prompt(
-                        w.prompt_text, w.stance, TEMPLATES[w.template], pairs, w.section_texts)
-                else:
-                    review = checker.build_review_prompt(w.prompt_text, pairs, w.body,
-                                                         w.min_chars, w.max_chars)
-                st.code(review, language=None, wrap_lines=True)
-            with c2.popover("🗑️ 削除"):
-                st.write("この作文を削除します。取り消せません。")
-                if st.button("削除する", key=f"del_{w.id}", type="primary"):
-                    repo.delete_writing(w.id)
-                    set_flash("作文を削除しました")
-                    st.rerun()
-
-    if len(writings) > ss.wr_history_limit:
-        if st.button(f"さらに表示(残り {len(writings) - ss.wr_history_limit} 件)"):
-            ss.wr_history_limit += 20
-            st.rerun()
-
-
-# ============ 🗂 お題の管理 ============
-def toggle_prompt(p: Prompt) -> None:
-    repo.update_prompt(p.id, p.kind, p.text, ss[f"active_{p.id}"])
-
-
-def show_prompts_tab() -> None:
-    with st.form("add_prompt", clear_on_submit=True, border=True):
-        st.markdown("**お題を追加**")
-        c1, c2, c3 = st.columns([1, 3, 1], vertical_alignment="bottom")
-        kind = c1.selectbox("種類", list(P.KIND_LABELS), format_func=P.KIND_LABELS.get)
-        text = c2.text_input("お題", placeholder="例:最近見た映画について")
-        if c3.form_submit_button("追加", type="primary", width="stretch"):
-            if text.strip():
-                repo.add_prompt(kind, text)
-                set_flash("お題を追加しました")
-                st.rerun()
-            else:
-                st.error("お題を入力してください。")
-
-    kind_filter = st.segmented_control(
-        "表示する種類", ["all", *P.KIND_LABELS],
-        format_func=lambda k: "すべて" if k == "all" else P.KIND_LABELS[k],
-        default="all",
-    )
-    prompts = repo.list_prompts(None if kind_filter in (None, "all") else kind_filter)
-    active = sum(p.active for p in prompts)
-    st.caption(f"{len(prompts)} 件(出題中 {active} 件)・ スイッチをオフにすると出題されなくなります")
-
-    with st.container(key="vlist"):
-        for p in prompts:
-            with st.container(key=f"vrow-prompt-{p.id}"):
-                c1, c2, c3, c4 = st.columns([0.6, 5, 1.4, 0.9], vertical_alignment="center")
-                c1.toggle("出題", value=p.active, key=f"active_{p.id}", on_change=toggle_prompt,
-                          args=(p,), label_visibility="collapsed")
-                muted = "" if p.active else " vg-muted"
-                html(c2, f'<div class="vg-list-text{muted}">{escape(p.text)}</div>')
-                html(c3, f'<span class="vg-badge">{escape(P.KIND_LABELS.get(p.kind, p.kind))}</span>')
-                with c4.popover("編集"):
-                    new_kind = st.selectbox(
-                        "種類", list(P.KIND_LABELS), index=list(P.KIND_LABELS).index(p.kind),
-                        format_func=P.KIND_LABELS.get, key=f"kind_{p.id}",
-                    )
-                    new_text = st.text_area("お題", value=p.text, key=f"text_{p.id}")
-                    b1, b2 = st.columns(2)
-                    if b1.button("保存", key=f"save_{p.id}", type="primary", width="stretch"):
-                        if new_text.strip():
-                            repo.update_prompt(p.id, new_kind, new_text, p.active)
-                            set_flash("お題を更新しました")
-                            st.rerun()
-                        else:
-                            st.error("お題を入力してください。")
-                    if b2.button("削除", key=f"delp_{p.id}", width="stretch"):
-                        repo.delete_prompt(p.id)
-                        set_flash("お題を削除しました(このお題で書いた作文は残ります)")
-                        st.rerun()
 
 
 # ============ 画面 ============
@@ -422,6 +287,6 @@ tab_write, tab_history, tab_prompts = st.tabs(["✍️ 書く", "📚 これま�
 with tab_write:
     show_write_tab()
 with tab_history:
-    show_history_tab()
+    show_saved_list(repo, vocab_repo)
 with tab_prompts:
-    show_prompts_tab()
+    show_prompt_admin(repo)

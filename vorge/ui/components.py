@@ -25,6 +25,14 @@ def set_flash(message: str, kind: str = "success") -> None:
     st.session_state["_flash"] = (message, kind)
 
 
+def html(container, body: str) -> None:
+    """HTML をそのまま表示する(container には st や列などを渡す)。
+
+    ユーザーが入力した文字列を埋め込むときは、必ず html.escape() を通すこと。
+    """
+    container.markdown(body, unsafe_allow_html=True)
+
+
 def show_flash() -> None:
     flash = st.session_state.pop("_flash", None)
     if flash:

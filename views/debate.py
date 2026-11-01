@@ -10,8 +10,8 @@ import streamlit as st
 
 from vorge.debate import checker
 from vorge.debate.templates import STANCE_HELP, STANCE_LABELS, TEMPLATES, opposite
-from vorge.settings import get_setting, set_setting
-from vorge.ui.components import set_flash, vocab_mini_cards
+from vorge.ui.components import html, set_flash, vocab_mini_cards
+from vorge.ui.persist import clear_draft, load_draft, load_settings, save_draft, save_setting
 from vorge.vocab.repository import VocabRepository
 from vorge.writing import prompts as P
 from vorge.writing.checker import count_chars
@@ -26,30 +26,25 @@ TOPIC_CUSTOM = "custom"
 TOPIC_LABELS = {TOPIC_RANDOM: "お題から選ぶ", TOPIC_CUSTOM: "自分で入力する"}
 
 # ---------- 出題条件(前回の選択を DB から読み込み、変更したら保存する) ----------
-SETTING_KEYS = {
+load_settings({
     "db_template": "rebuttal",
     "db_topic": TOPIC_RANDOM,
     "db_vocab_mode": P.VOCAB_LOGIC,
     "db_vocab_count": 2,
-}
-for key, default in SETTING_KEYS.items():
-    if key not in ss:
-        ss[key] = get_setting(key, default)
-    if ss[key] is None:  # segmented_control で選択が外れた場合
-        ss[key] = default
-
-
-def save_setting(key: str) -> None:
-    if ss[key] is not None:
-        set_setting(key, ss[key])
-
+})
 
 # ---------- 組み立て中の状態 ----------
-# db_task: {"prompt_id", "prompt_text", "stance", "template", "vocab_ids"}
-ss.setdefault("db_task", None)
-ss.setdefault("db_sections", {})  # 欄 → 書きかけの文章(画面を移動しても残す)
+# 書きかけ(お題・立場・語彙・各欄)は DB にも下書き保存し、ブラウザを閉じても続きから書けるようにする
+if "db_task" not in ss:
+    draft = load_draft("debate") or {}
+    ss.db_task = draft.get("task")  # {"prompt_id", "prompt_text", "stance", "template", "vocab_ids"}
+    ss.db_sections = draft.get("sections", {})  # 欄 → 書きかけの文章
 ss.setdefault("db_version", 0)  # 入力欄を作り直すための番号
 ss.setdefault("db_saved_id", None)
+
+
+def store_draft() -> None:
+    save_draft("debate", {"task": ss.db_task, "sections": ss.db_sections})
 
 
 def new_task(custom_topic: str = "") -> None:
@@ -79,29 +74,30 @@ def new_task(custom_topic: str = "") -> None:
     ss.db_sections = {}
     ss.db_version += 1
     ss.db_saved_id = None
+    store_draft()
 
 
 def change_prompt() -> None:
     prompt = repo.random_prompt(P.KIND_OPINION, exclude_id=ss.db_task["prompt_id"])
     if prompt:
         ss.db_task.update(prompt_id=prompt.id, prompt_text=prompt.text)
+        store_draft()
 
 
 def change_vocab() -> None:
     current = set(ss.db_task["vocab_ids"])
     ss.db_task["vocab_ids"] = repo.pick_vocab(ss.db_vocab_mode, ss.db_vocab_count, current)
+    store_draft()
 
 
 def flip_stance() -> None:
     ss.db_task["stance"] = opposite(ss.db_task["stance"])
+    store_draft()
 
 
 def keep_section(key: str) -> None:
     ss.db_sections[key] = ss[f"db_{key}_{ss.db_version}"]
-
-
-def html(container, body: str) -> None:
-    container.markdown(body, unsafe_allow_html=True)
+    store_draft()
 
 
 # ============ 設定 ============
@@ -174,11 +170,14 @@ def show_task_header(task: dict) -> None:
 def show_manual_picker(task: dict) -> None:
     all_vocab = vocab_repo.list_all()
     labels = {v.id: f"{v.word}({v.reading})" if v.reading else v.word for v in all_vocab}
-    task["vocab_ids"] = st.multiselect(
+    selected = st.multiselect(
         f"使う語彙を選ぶ(最大 {ss.db_vocab_count} 語)", list(labels),
         default=[i for i in task["vocab_ids"] if i in labels], format_func=labels.get,
         max_selections=ss.db_vocab_count, placeholder="語彙や読みを入力して検索",
     )
+    if selected != task["vocab_ids"]:
+        task["vocab_ids"] = selected
+        store_draft()
 
 
 # ============ 欄ごとの入力とチェック ============
@@ -289,7 +288,8 @@ if ss.db_saved_id:
 
 st.write("")
 show_sections(task, result)
-st.caption("入力欄の外をクリックするか Ctrl+Enter を押すと、文字数とチェックが更新されます。")
+st.caption("入力欄の外をクリックするか Ctrl+Enter を押すと、文字数とチェックが更新されます"
+           "(書きかけは自動で下書き保存されます)。")
 show_check(task, result, len(vocabs))
 
 with st.expander("1 つの文章として読む"):
@@ -304,4 +304,5 @@ if st.button("💾 保存する", type="primary", disabled=bool(result.empty_sec
         dict(ss.db_sections), body, count_chars(body), template.min_chars, template.max_chars,
         [WritingWord(v.id, v.word, result.vocab_used.get(v.word, False)) for v in vocabs],
     )
+    clear_draft("debate")
     st.rerun()

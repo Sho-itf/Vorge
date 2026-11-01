@@ -7,6 +7,7 @@ from pathlib import Path
 
 from vorge.db import get_connection
 from vorge.flashcard import scheduler
+from vorge.history.repository import HistoryRepository
 
 
 @dataclass
@@ -218,13 +219,14 @@ class ReviewRepository:
     def ids_in_group(self, group: str) -> list[int]:
         """学習状況のグループに入る語彙ID。作文トレーニング・穴埋めクイズの出題範囲に使う。
 
-        - "weak"     苦手   : 不正解か「自信がない」が 1 回以上ある語彙
+        - "weak"     苦手   : フラッシュカードとクイズを合わせた判定(HistoryRepository.weak_vocab)
         - "learning" 学習中 : 学習済みで、まだ「習得」(間隔 21 日以上)に達していない語彙
         - "new"      未学習 : まだフラッシュカードで学習していない語彙
         - それ以外           : 全語彙
         """
+        if group == "weak":
+            return HistoryRepository(self.db_path).weak_ids()
         sql = {
-            "weak": "SELECT vocab_id FROM review_state WHERE wrong_count + unsure_count > 0",
             "learning": "SELECT vocab_id FROM review_state WHERE interval_days < 21",
             "new": "SELECT id FROM vocab v WHERE NOT EXISTS "
             "(SELECT 1 FROM review_state r WHERE r.vocab_id = v.id)",
