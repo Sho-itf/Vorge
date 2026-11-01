@@ -16,7 +16,8 @@ from vorge.writing.prompts import DEFAULT_PROMPTS
 #   1: vocab, categories
 #   2: review_state, study_log(フラッシュカード・学習履歴)
 #   3: app_settings, writing_prompts, writings, writing_vocab(作文トレーニング)
-SCHEMA_VERSION = 3
+#   4: quiz_log(穴埋めクイズ)
+SCHEMA_VERSION = 4
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS categories (
@@ -117,6 +118,18 @@ CREATE TABLE IF NOT EXISTS writing_vocab (
     PRIMARY KEY (writing_id, vocab_id)
 );
 CREATE INDEX IF NOT EXISTS idx_writing_vocab_vocab ON writing_vocab(vocab_id);
+
+-- 穴埋めクイズの回答記録。フラッシュカードの復習日(review_state)には影響させない
+CREATE TABLE IF NOT EXISTS quiz_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    vocab_id    INTEGER NOT NULL REFERENCES vocab(id) ON DELETE CASCADE,
+    answered_at TEXT NOT NULL,
+    format      TEXT NOT NULL,     -- choice(4択) / input(入力式)
+    correct     INTEGER NOT NULL,
+    answer      TEXT NOT NULL      -- 選んだ・入力した答え
+);
+CREATE INDEX IF NOT EXISTS idx_quiz_vocab ON quiz_log(vocab_id);
+CREATE INDEX IF NOT EXISTS idx_quiz_answered_at ON quiz_log(answered_at);
 """
 
 
@@ -167,6 +180,6 @@ def init_db(db_path: Path | None = None) -> None:
             )
         current = conn.execute("PRAGMA user_version").fetchone()[0]
         if current < SCHEMA_VERSION:
-            # 1 → 2 → 3 は新しいテーブルの追加だけなので、上の CREATE TABLE IF NOT EXISTS で完了。
+            # 1 → 2 → 3 → 4 は新しいテーブルの追加だけなので、上の CREATE TABLE IF NOT EXISTS で完了。
             # 既存の列を変えるような変更が必要になったら、ここに移行処理(ALTER TABLE など)を書く
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")

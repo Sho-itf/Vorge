@@ -8,10 +8,12 @@ import streamlit as st
 
 from vorge.flashcard import scheduler, session
 from vorge.history.repository import HistoryRepository
+from vorge.quiz.repository import QuizRepository
 from vorge.writing.repository import WritingRepository
 
 repo = HistoryRepository()
 writing_repo = WritingRepository()
+quiz_repo = QuizRepository()
 today = date.today()
 
 # 回答結果の色(状態を表す色。正解=緑、自信がない=黄、不正解=赤)。凡例とツールチップで文字でも区別できる
@@ -187,6 +189,34 @@ else:
         "練習の回答も通常どおり記録され、次回復習日が更新されます。"
         "正答率が上がると、このリストから外れていきます。"
     )
+
+# ---------- 穴埋めクイズ ----------
+st.write("")
+st.subheader("穴埋めクイズ")
+if quiz_repo.total_answers() == 0:
+    st.caption("まだクイズの記録はありません。")
+else:
+    quiz_recent = quiz_repo.accuracy_between(week_start, today)
+    c1, c2, _ = st.columns([1, 1, 2])
+    with c1.container(border=True):
+        st.metric("総回答数", f"{quiz_repo.total_answers()} 問")
+    with c2.container(border=True):
+        st.metric("直近7日の正答率", f"{quiz_recent:.0%}" if quiz_recent is not None else "—")
+    missed = quiz_repo.most_missed(10)
+    if missed:
+        st.caption("クイズでよく間違える語彙")
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "語彙": [m.word for m in missed],
+                    "意味": [m.meaning for m in missed],
+                    "間違えた回数": [m.wrong for m in missed],
+                    "出題回数": [m.total for m in missed],
+                }
+            ),
+            hide_index=True,
+            width="stretch",
+        )
 
 # ---------- 最近の回答 ----------
 st.write("")
