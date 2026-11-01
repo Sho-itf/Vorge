@@ -1,8 +1,8 @@
-"""設定画面:「今日」の区切り時刻など、アプリ全体の設定。"""
+"""設定画面:「今日」の区切り時刻、1 日の目標など、アプリ全体の設定。"""
 
 import streamlit as st
 
-from vorge import timeutil
+from vorge import daily, timeutil
 from vorge.settings import set_setting
 from vorge.ui.components import set_flash
 
@@ -21,3 +21,15 @@ with st.container(border=True):
         set_flash(f"1 日の始まりを {hour}:00 にしました")
         st.rerun()
     st.caption(f"今は {timeutil.today():%Y-%m-%d} の学習として記録されます。")
+
+with st.container(border=True):
+    st.markdown("#### 1 日の目標(ホームの「今日の学習」)")
+    st.write("復習は、復習日が来ている語彙をすべて行います。それ以外の目標をここで決めます"
+             "(0 にするとメニューから外れます)。")
+    current = daily.goals()
+    for key, label in daily.GOAL_LABELS.items():
+        value = st.number_input(label, min_value=0, max_value=200, value=current[key], step=1, key=f"goal_{key}")
+        if value != current[key]:
+            set_setting(key, int(value))
+            set_flash("目標を保存しました")
+            st.rerun()

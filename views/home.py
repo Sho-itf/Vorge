@@ -4,8 +4,12 @@ from html import escape
 
 import streamlit as st
 
-from vorge import timeutil
+from vorge import daily, timeutil
+from vorge.flashcard import scheduler, session
 from vorge.flashcard.repository import ReviewRepository
+from vorge.history.repository import HistoryRepository
+from vorge.settings import get_setting
+from vorge.ui.components import html
 from vorge.vocab.repository import VocabRepository
 
 repo = VocabRepository()
@@ -28,38 +32,51 @@ if total == 0:
         c2.page_link("views/library.py", label="語彙を追加する", icon=":material/add:")
     st.write("")
 
-# ---------- 今日の状況 ----------
+# ---------- 今日の学習 ----------
 today = timeutil.today()
-due = review_repo.count_due(today)
 
-st.subheader("今日の状況")
-c1, c2, c3, c4 = st.columns(4)
-with c1.container(border=True):
-    st.metric(
-        "今日の復習予定",
-        f"{due} 語",
-        help="復習日が今日以前になっている語彙の数です。",
-    )
-with c2.container(border=True):
-    st.metric(
-        "今日の新規学習",
-        f"{review_repo.count_new_studied_on(today)} 語",
-        help="今日フラッシュカードではじめて学習した語彙の数です。",
-    )
-with c3.container(border=True):
-    st.metric("登録語彙数", f"{total} 語")
-with c4.container(border=True):
-    st.metric(
-        "今日追加した語彙",
-        f"{repo.count_added_on(today)} 語",
-        help="今日ライブラリに登録した語彙の数です。",
-    )
+
+def start_next(task: daily.DailyTask) -> None:
+    """次のメニューに取り組む。復習・新しい語彙はフラッシュカードをすぐ始める。"""
+    if task.key in ("review", "new"):
+        goal_new = daily.goals()["daily_new"]
+        remaining_new = max(goal_new - review_repo.count_new_studied_on(today), 0)
+        queue = review_repo.build_queue(today, remaining_new)
+        session.init(st.session_state)
+        session.start(
+            st.session_state, queue,
+            get_setting("fc_setting_mode", scheduler.MODE_WORD_TO_MEANING),
+            label="今日の学習", input_answer=bool(get_setting("fc_setting_input", False)),
+        )
+    st.switch_page(task.page)
+
 
 if total > 0:
-    message = f"今日の復習が {due} 語あります。" if due else "今日の復習はありません。新しい語彙を覚えましょう。"
-    c1, c2 = st.columns([3, 1])
-    c1.info(message, icon="🃏")
-    c2.page_link("views/flashcard.py", label="フラッシュカードを始める", icon=":material/play_arrow:")
+    tasks = daily.today_tasks(today)
+    done = sum(t.done for t in tasks)
+    streak = HistoryRepository().streak(today)
+    st.subheader("今日の学習")
+    with st.container(border=True):
+        st.progress(done / len(tasks), text=f"{done} / {len(tasks)} 完了 ・ 🔥 連続 {streak} 日")
+        for task in tasks:
+            c1, c2, c3 = st.columns([3, 2, 1.2], vertical_alignment="center")
+            html(c1, f'<div class="vg-list-text">{"✅" if task.done else "⬜"} {task.label}</div>')
+            html(c2, f'<div class="vg-list-ex">{task.progress_text}</div>')
+            if not task.done:
+                c3.page_link(task.page, label="やる", icon=":material/arrow_forward:")
+        nxt = daily.next_task(tasks)
+        if nxt is None:
+            st.success("🎉 今日のメニューはすべて完了です。おつかれさまでした!")
+        elif st.button(f"▶ 続きから:{nxt.label}", type="primary"):
+            start_next(nxt)
+        st.caption("1 日の目標は「設定」で変えられます。")
+
+st.write("")
+c1, c2 = st.columns(2)
+with c1.container(border=True):
+    st.metric("登録語彙数", f"{total} 語")
+with c2.container(border=True):
+    st.metric("今日追加した語彙", f"{repo.count_added_on(today)} 語", help="今日ライブラリに登録した語彙の数です。")
 
 st.write("")
 
