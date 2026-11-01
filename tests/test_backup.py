@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from vorge import backup, timeutil
+from vorge import backup, db, timeutil
 from vorge.db import SCHEMA_VERSION, init_db, migrate
 from vorge.flashcard.repository import ReviewRepository
 from vorge.vocab.models import Vocab
@@ -59,17 +59,34 @@ def test_import_rejects_other_files(repo):
         backup.import_all(b'{"hello": 1}', repo.db_path)
 
 
-def test_migrate_is_idempotent_and_backs_up_old_db(tmp_path):
-    path = tmp_path / "old.db"
-    init_db(path, auto_backup_before_migration=False)
-    with sqlite3.connect(path) as conn:  # 古いバージョンの DB を再現する
-        conn.execute("PRAGMA user_version = 3")
+def test_migration_from_v6_keeps_data_and_backs_up(tmp_path):
+    """バージョン 6 の DB(ゴミ箱導入前)を、データを保ったまま最新に移行できる。"""
+    path = tmp_path / "v6.db"
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    db._baseline(conn)
+    conn.execute("PRAGMA user_version = 6")
+    conn.execute("INSERT INTO vocab (id, word, meaning) VALUES (1, '俯瞰', '全体を見渡す')")
+    conn.execute(
+        "INSERT INTO review_state VALUES (1, 3, '2026-11-04', 1, 1, 0, 0, 'correct', '2026-11-01 09:00:00')"
+    )
+    conn.commit()
     conn.close()
+
     init_db(path)
-    assert list(backup.backup_dir(path).glob(f"before_v{SCHEMA_VERSION}_*.db"))
+    assert list(backup.backup_dir(path).glob(f"before_v{SCHEMA_VERSION}_*.db"))  # 移行前のバックアップ
+    repo = VocabRepository(path)
+    assert [v.word for v in repo.list_all()] == ["俯瞰"]
+    assert ReviewRepository(path).get_state(1) is not None
+    repo.delete(1)
+    assert repo.list_all() == [] and [v.id for v in repo.list_trash()] == [1]
     with sqlite3.connect(path) as conn:
         conn.row_factory = sqlite3.Row
-        assert migrate(conn) == []  # もう適用するものは無い
+        assert migrate(conn) == []  # 2 回目は何もしない
+        conn.execute("PRAGMA foreign_keys = ON")
+        # 参照先が vocab_all に書き換わっている(完全に削除すると学習記録も消える)
+        conn.execute("DELETE FROM vocab_all WHERE id = 1")
+        assert conn.execute("SELECT COUNT(*) FROM review_state").fetchone()[0] == 0
     conn.close()
 
 

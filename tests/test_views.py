@@ -196,3 +196,17 @@ def test_settings_page_changes_day_start(app):
     assert not app.exception
     assert timeutil.day_start_hour() == 6
     timeutil.set_day_start_hour(timeutil.DEFAULT_DAY_START_HOUR)  # ほかのテストに影響しないよう戻す
+
+
+def test_trash_tab_restore_and_library_link(app):
+    repo = VocabRepository(config.DB_PATH)
+    vid = repo.search("俯瞰")[0].id
+    repo.delete(vid)
+    open_page(app, "views/csv_io.py")
+    click(app, "元に戻す")
+    assert repo.get(vid) is not None
+
+    # 他の語彙の詳細からのリンク(?vocab=ID)で、語彙ライブラリが開ける
+    app.query_params["vocab"] = str(vid)
+    open_page(app, "views/library.py")
+    assert "vocab" not in app.query_params

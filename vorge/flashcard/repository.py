@@ -195,7 +195,9 @@ class ReviewRepository:
     def count_due(self, today: date) -> int:
         with self._connect() as conn:
             return conn.execute(
-                "SELECT COUNT(*) FROM review_state WHERE next_review <= ?", (today.isoformat(),)
+                "SELECT COUNT(*) FROM review_state r JOIN vocab v ON v.id = r.vocab_id "
+                "WHERE r.next_review <= ?",
+                (today.isoformat(),),
             ).fetchone()[0]
 
     def count_new_studied_on(self, day: date) -> int:
@@ -229,7 +231,8 @@ class ReviewRepository:
         if group == "weak":
             return HistoryRepository(self.db_path).weak_ids()
         sql = {
-            "learning": "SELECT vocab_id FROM review_state WHERE interval_days < 21",
+            "learning": "SELECT r.vocab_id FROM review_state r JOIN vocab v ON v.id = r.vocab_id "
+            "WHERE r.interval_days < 21",
             "new": "SELECT id FROM vocab v WHERE NOT EXISTS "
             "(SELECT 1 FROM review_state r WHERE r.vocab_id = v.id)",
         }.get(group, "SELECT id FROM vocab")

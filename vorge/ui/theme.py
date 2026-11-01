@@ -42,6 +42,19 @@ div.vg-card p.vg-text { line-height: 1.8; margin: 0; }
     border-radius: 6px; font-size: 0.88rem;
     border: 1px solid rgba(128, 128, 128, 0.3);
 }
+a.vg-chip-link { text-decoration: none; color: inherit; border-color: rgba(99, 102, 241, 0.6); }
+a.vg-chip-link:hover { background: rgba(99, 102, 241, 0.14); }
+a.vg-dict {
+    display: inline-block; margin-right: 0.8rem; font-size: 0.82rem; text-decoration: none; opacity: 0.8;
+}
+a.vg-dict:hover { opacity: 1; text-decoration: underline; }
+div.vg-card p.vg-dicts { margin: 0.9rem 0 0; }
+.vg-sense { font-size: 0.8em; margin-left: 0.2em; opacity: 0.7; font-weight: 400; }
+table.vg-compare { width: 100%; border-collapse: collapse; }
+table.vg-compare th { text-align: left; font-size: 0.8rem; opacity: 0.6; font-weight: 600; }
+table.vg-compare td, table.vg-compare th {
+    padding: 0.45rem 0.5rem; border-bottom: 1px solid rgba(128, 128, 128, 0.2); vertical-align: top;
+}
 .vg-badge-sub { background: rgba(16, 185, 129, 0.16); }
 .vg-stars { color: #f59e0b; letter-spacing: 0.05em; white-space: nowrap; }
 .vg-list-stars { font-size: 0.8rem; letter-spacing: 0; }

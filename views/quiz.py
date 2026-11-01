@@ -26,7 +26,13 @@ load_settings({
     "qz_count": 10,
     "qz_categories": [],
     "qz_difficulty": DEFAULT_DIFFICULTY,
+    "qz_choice_mode": "normal",
 })
+CHOICE_MODE_LABELS = {"normal": "通常", "contrast": "使い分け(類義語を混ぜる)"}
+
+
+def contrast() -> bool:
+    return ss.qz_choice_mode == "contrast"
 # 難易度は (下限, 上限) の 2 つの値。JSON から読むとリストになるのでタプルに直し、壊れていれば初期値に戻す
 if not (isinstance(ss.qz_difficulty, (list, tuple)) and len(ss.qz_difficulty) == 2):
     ss.qz_difficulty = DEFAULT_DIFFICULTY
@@ -70,7 +76,7 @@ def sentence_html(q: Question, filled: bool) -> str:
 
 # ============ 設定画面 ============
 def show_settings() -> None:
-    eligible = repo.eligible_vocab(ss.qz_scope, ss.qz_categories, ss.qz_difficulty)
+    eligible = repo.eligible_vocab(ss.qz_scope, ss.qz_categories, ss.qz_difficulty, contrast())
     with st.container(border=True):
         st.markdown("#### 出題の設定")
         c1, c2 = st.columns(2)
@@ -93,9 +99,16 @@ def show_settings() -> None:
             "難易度", options=[1, 2, 3, 4, 5], value=ss.qz_difficulty,
             key="qz_difficulty_widget", on_change=save_difficulty,
         )
-        st.slider(
+        c1, c2 = st.columns(2)
+        c1.slider(
             "問題数", min_value=5, max_value=30, step=1, key="qz_count",
             on_change=save_setting, args=("qz_count",),
+        )
+        c2.segmented_control(
+            "選択肢", list(CHOICE_MODE_LABELS), format_func=CHOICE_MODE_LABELS.get, key="qz_choice_mode",
+            on_change=save_setting, args=("qz_choice_mode",),
+            help="使い分け:登録済みの類義語を選択肢に混ぜ、似た語の中から正しい語を選ぶ練習をします"
+            "(類義語が登録されている語彙だけが出題されます)。",
         )
         n = min(ss.qz_count, len(eligible))
         st.write(f"この条件で出題できる語彙:**{len(eligible)}** 語 → 今回は **{n}** 問")
@@ -115,7 +128,7 @@ def show_settings() -> None:
                         st.rerun()
         if st.button("▶ クイズをはじめる", type="primary", disabled=not eligible):
             start(repo.build_questions(ss.qz_count, ss.qz_scope, ss.qz_categories,
-                                       ss.qz_difficulty))
+                                       ss.qz_difficulty, contrast=contrast()))
             st.rerun()
 
 
@@ -237,10 +250,11 @@ def show_summary() -> None:
     c1, c2, c3 = st.columns(3)
     missed_ids = list(dict.fromkeys(r["vocab_id"] for r in results if not r["correct"]))
     if c1.button("間違えた語彙だけもう一度", type="primary", width="stretch", disabled=not missed_ids):
-        start(repo.build_questions(len(missed_ids), only_ids=missed_ids))
+        start(repo.build_questions(len(missed_ids), only_ids=missed_ids, contrast=contrast()))
         st.rerun()
     if c2.button("同じ条件でもう一度", width="stretch"):
-        start(repo.build_questions(ss.qz_count, ss.qz_scope, ss.qz_categories, ss.qz_difficulty))
+        start(repo.build_questions(ss.qz_count, ss.qz_scope, ss.qz_categories, ss.qz_difficulty,
+                                   contrast=contrast()))
         st.rerun()
     if c3.button("設定に戻る", width="stretch"):
         ss.qz_questions = None

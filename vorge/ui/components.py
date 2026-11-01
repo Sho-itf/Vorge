@@ -1,6 +1,7 @@
 """画面間で共通の UI 部品(語彙カード・入力フォーム・通知)。"""
 
 from html import escape
+from urllib.parse import quote
 
 import streamlit as st
 
@@ -92,10 +93,32 @@ def vocab_mini_cards(vocabs: list[Vocab], used: dict[str, bool]) -> None:
         )
 
 
-def vocab_card(v: Vocab, review: ReviewState | None = None, show_meta: bool = True) -> None:
+def dictionary_links_html(word: str) -> str:
+    """オンライン辞書で語彙を調べるリンク(新しいタブで開く)。"""
+    q = quote(word)
+    links = [("コトバンク", f"https://kotobank.jp/search?q={q}"),
+             ("Weblio", f"https://www.weblio.jp/content/{q}")]
+    return "".join(
+        f'<a class="vg-dict" href="{url}" target="_blank" rel="noopener">📖 {name}</a>' for name, url in links
+    )
+
+
+def vocab_link_html(term: str, vocab_id: int) -> str:
+    """登録済みの語彙へのリンク(語彙ライブラリでその語彙の詳細を開く)。"""
+    return f'<a class="vg-chip vg-chip-link" href="./library?vocab={vocab_id}" target="_self">{escape(term)}</a>'
+
+
+def vocab_card(
+    v: Vocab,
+    review: ReviewState | None = None,
+    show_meta: bool = True,
+    linked: dict[str, int] | None = None,
+    show_dictionary: bool = True,
+) -> None:
     """語彙 1 件の詳細をカードとして表示する。空の項目は表示しない。
 
     review を渡すと、習得状況と次回復習日も表示する。
+    linked(語 → 語彙ID)を渡すと、類義語・対義語のうち登録済みの語をリンクにする。
     """
     e = lambda s: escape(str(s))  # noqa: E731  ユーザー入力を安全に HTML に埋め込む
 
@@ -109,7 +132,7 @@ def vocab_card(v: Vocab, review: ReviewState | None = None, show_meta: bool = Tr
         f'<p class="vg-meaning">{e(v.meaning)}</p>',
     ]
 
-    examples = [x for x in (v.example_1, v.example_2) if x]
+    examples = v.all_examples
     if examples:
         parts.append('<p class="vg-label">例文</p>')
         parts.extend(f'<p class="vg-text">・{e(x)}</p>' for x in examples)
@@ -122,7 +145,10 @@ def vocab_card(v: Vocab, review: ReviewState | None = None, show_meta: bool = Tr
         terms = split_terms(getattr(v, name))
         if terms:
             parts.append(f'<p class="vg-label">{FIELD_LABELS[name]}</p>')
-            parts.append("".join(f'<span class="vg-chip">{e(t)}</span>' for t in terms))
+            parts.append("".join(
+                vocab_link_html(t, linked[t]) if linked and t in linked else f'<span class="vg-chip">{e(t)}</span>'
+                for t in terms
+            ))
 
     if v.source:
         parts.append(f'<p class="vg-label">{FIELD_LABELS["source"]}</p>')
@@ -135,6 +161,9 @@ def vocab_card(v: Vocab, review: ReviewState | None = None, show_meta: bool = Tr
             f" ・ 正解 {review.correct_count} / 自信なし {review.unsure_count}"
             f" / 不正解 {review.wrong_count}</p>"
         )
+
+    if show_dictionary:
+        parts.append(f'<p class="vg-dicts">{dictionary_links_html(v.word)}</p>')
 
     if show_meta:
         parts.append(
@@ -171,6 +200,10 @@ def vocab_form(
         c1, c2 = st.columns(2)
         example_1 = c1.text_input("例文1", v.example_1)
         example_2 = c2.text_input("例文2", v.example_2)
+        extra = st.text_area(
+            "その他の例文(3 本目以降。1 行に 1 つ)", "\n".join(v.extra_examples or []), height=68,
+            help="例文が多いほど、穴埋めクイズで出題される文の種類が増えます。",
+        )
         nuance = st.text_area(
             "ニュアンス", v.nuance, height=68, placeholder="似た言葉との違い、使う場面など"
         )
@@ -216,6 +249,7 @@ def vocab_form(
         category=new_category.strip() or category,
         difficulty=difficulty,
         source=source,
+        extra_examples=extra.splitlines(),
     ).normalized()
 
     errors = result.validate()

@@ -45,13 +45,13 @@ def find_blank(sentence: str, word: str) -> Blank | None:
 
 
 def blanks_for(vocab: Vocab, excluded: set[str] = frozenset()) -> list[Blank]:
-    """その語彙の例文から作れる空欄の一覧(例文 1・2 のうち、語彙が含まれているもの)。
+    """その語彙の例文から作れる空欄の一覧(すべての例文のうち、語彙が含まれているもの)。
 
     excluded に入っている例文(「おかしい」と報告されたもの)は使わない。
     """
     result = []
-    for sentence in (vocab.example_1, vocab.example_2):
-        if not sentence or sentence in excluded:
+    for sentence in vocab.all_examples:
+        if sentence in excluded:
             continue
         blank = find_blank(sentence, vocab.word)
         if blank:
@@ -59,20 +59,27 @@ def blanks_for(vocab: Vocab, excluded: set[str] = frozenset()) -> list[Blank]:
     return result
 
 
-def pick_distractors(answer: Vocab, others: list[Vocab], k: int = CHOICE_COUNT - 1) -> list[Vocab]:
+def pick_distractors(
+    answer: Vocab, others: list[Vocab], k: int = CHOICE_COUNT - 1, contrast: bool = False
+) -> list[Vocab]:
     """はずれの選択肢を k 個選ぶ。
 
-    優先順:同じカテゴリで難易度の差が 1 以内 → 同じカテゴリ → その他。
-    「どちらも正解」になるのを防ぐため、正解と同じ語・正解の類義語に登録された語は使わない。
+    通常:同じカテゴリで難易度の差が 1 以内 → 同じカテゴリ → その他、の順に選ぶ。
+          「どちらも正解」になるのを防ぐため、正解と同じ語・類義語として登録された語は使わない。
+    使い分け(contrast=True):登録済みの類義語を最優先で混ぜ、似た語の中から選び分ける練習にする。
     """
     synonyms = set(split_terms(answer.synonyms))
+
+    def is_synonym(v: Vocab) -> bool:
+        return v.word in synonyms or answer.word in split_terms(v.synonyms)
+
     usable = [
         v for v in others
-        if v.id != answer.id and v.word != answer.word and v.word not in synonyms
-        and answer.word not in split_terms(v.synonyms)
+        if v.id != answer.id and v.word != answer.word and (contrast or not is_synonym(v))
     ]
     random.shuffle(usable)
     tiers = [
+        [v for v in usable if contrast and is_synonym(v)],
         [v for v in usable if v.category == answer.category
          and abs(v.difficulty - answer.difficulty) <= 1],
         [v for v in usable if v.category == answer.category],
