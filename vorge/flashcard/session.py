@@ -4,7 +4,7 @@
 出題を始められるよう、ここにまとめている。
 """
 
-from typing import MutableMapping
+from collections.abc import MutableMapping
 
 from vorge.flashcard import scheduler
 

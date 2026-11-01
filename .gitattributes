@@ -1,0 +1,4 @@
+# テキストファイルの改行コードを LF にそろえる(Windows で出ていた「LF will be replaced by CRLF」警告を止める)
+* text=auto eol=lf
+*.db binary
+*.png binary
