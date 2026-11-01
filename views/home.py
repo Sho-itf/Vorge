@@ -66,22 +66,25 @@ st.write("")
 # ---------- 機能メニュー ----------
 st.subheader("機能")
 features = [
-    ("views/library.py", "語彙ライブラリ", ":material/menu_book:",
-     "語彙の検索・閲覧・追加・編集・削除", True),
-    ("views/csv_io.py", "CSV入出力", ":material/swap_vert:",
-     "CSV からの一括登録と、バックアップ用の書き出し", True),
     ("views/flashcard.py", "フラッシュカード", ":material/style:",
-     "意味を隠して覚えているか確認し、復習日を自動で決める", True),
+     "意味を隠して覚えているか確認し、復習日を自動で決める"),
+    ("views/quiz.py", "穴埋めクイズ", ":material/quiz:",
+     "例文の空欄に入る語彙を選び、文脈での使い分けを確かめる"),
     ("views/writing.py", "作文トレーニング", ":material/edit_note:",
-     "お題と指定の語彙で文章を書き、使い方を身につける", True),
+     "お題と指定の語彙で文章を書き、使い方を身につける"),
     ("views/history.py", "学習履歴", ":material/insights:",
-     "回答数・正答率の推移と、苦手な語彙を確認する", True),
+     "回答数・正答率の推移と、苦手な語彙を確認する"),
+    ("views/library.py", "語彙ライブラリ", ":material/menu_book:",
+     "語彙の検索・閲覧・追加・編集・削除"),
+    ("views/csv_io.py", "CSV入出力", ":material/swap_vert:",
+     "CSV からの一括登録と、バックアップ用の書き出し"),
 ]
-cols = st.columns(len(features))
-for col, (page, label, icon, desc, enabled) in zip(cols, features):
-    with col.container(border=True):
-        st.page_link(page, label=label, icon=icon, disabled=not enabled)
-        st.markdown(f"<div class='vg-feature-desc'>{desc}</div>", unsafe_allow_html=True)
+PER_ROW = 3
+for start in range(0, len(features), PER_ROW):
+    for col, (page, label, icon, desc) in zip(st.columns(PER_ROW), features[start:start + PER_ROW]):
+        with col.container(border=True):
+            st.page_link(page, label=label, icon=icon)
+            st.markdown(f"<div class='vg-feature-desc'>{desc}</div>", unsafe_allow_html=True)
 
 # ---------- 最近追加した語彙 ----------
 if total > 0:

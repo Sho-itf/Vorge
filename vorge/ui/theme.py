@@ -83,6 +83,20 @@ div.vg-card.vg-wordcard { padding: 0.9rem 1.1rem; height: 100%; }
     border-radius: 6px;
 }
 
+/* 穴埋めクイズ */
+div.vg-card.vg-quiz p.vg-quiz-text { font-size: 1.5rem; line-height: 1.9; margin: 0.4rem 0 0; }
+.vg-blank {
+    display: inline-block; min-width: 5em; margin: 0 0.2em;
+    border-bottom: 2px solid rgba(99, 102, 241, 0.8); background: rgba(99, 102, 241, 0.12);
+}
+.vg-choice-row {
+    display: flex; align-items: baseline; gap: 1rem; padding: 0.45rem 0;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+}
+.vg-choice-row:last-child { border-bottom: none; }
+.vg-choice-mark { width: 1.4em; flex: none; }
+.vg-choice-row .vg-list-word { min-width: 6em; flex: none; }
+
 /* ホーム画面の機能カード */
 .vg-feature-desc { opacity: 0.7; font-size: 0.9rem; min-height: 2.8em; }
 </style>

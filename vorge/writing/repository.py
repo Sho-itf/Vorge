@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 
 from vorge.db import get_connection
+from vorge.flashcard.repository import ReviewRepository
 from vorge.writing import prompts as P
 
 
@@ -199,29 +200,9 @@ class WritingRepository:
 
     # ---------- 使う語彙の選択 ----------
 
-    def _ids(self, sql: str, params: tuple = ()) -> list[int]:
-        with self._connect() as conn:
-            return [r[0] for r in conn.execute(sql, params).fetchall()]
-
     def candidate_ids(self, mode: str) -> list[int]:
-        """語彙の選び方ごとの候補。
-
-        - 苦手   : 不正解か「自信がない」が 1 回以上ある語彙
-        - 学習中 : フラッシュカードで学習済みで、まだ「習得」(間隔 21 日以上)に達していない語彙
-        - 未学習 : まだフラッシュカードで学習していない語彙
-        """
-        if mode == P.VOCAB_WEAK:
-            return self._ids(
-                "SELECT vocab_id FROM review_state WHERE wrong_count + unsure_count > 0"
-            )
-        if mode == P.VOCAB_LEARNING:
-            return self._ids("SELECT vocab_id FROM review_state WHERE interval_days < 21")
-        if mode == P.VOCAB_NEW:
-            return self._ids(
-                "SELECT id FROM vocab v WHERE NOT EXISTS "
-                "(SELECT 1 FROM review_state r WHERE r.vocab_id = v.id)"
-            )
-        return self._ids("SELECT id FROM vocab")
+        """語彙の選び方ごとの候補(苦手 / 学習中 / 未学習 / それ以外は全語彙)。"""
+        return ReviewRepository(self.db_path).ids_in_group(mode)
 
     def pick_vocab(self, mode: str, count: int, exclude: set[int] = frozenset()) -> list[int]:
         """作文で使う語彙を count 個選ぶ。
