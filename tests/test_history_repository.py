@@ -4,7 +4,7 @@ import pytest
 
 from vorge.flashcard import session
 from vorge.flashcard.repository import ReviewRepository
-from vorge.flashcard.scheduler import CORRECT, UNSURE, WRONG
+from vorge.flashcard.scheduler import CORRECT, EASY, UNSURE, WRONG
 from vorge.history.repository import HistoryRepository
 from vorge.quiz.repository import FORMAT_CHOICE, QuizRepository
 from vorge.vocab.models import Vocab
@@ -69,18 +69,20 @@ def test_streak(repo, review, history):
 def test_mastery_distribution(repo, review, history):
     a, b = add(repo, "A"), add(repo, "B")
     add(repo, "C")
-    review.record_answer(a, CORRECT, now=at(DAY1))  # 3日 → 学習中
-    for _ in range(2):
-        review.record_answer(b, CORRECT, now=at(DAY1))  # 3 → 8日 → 定着中
+    review.record_answer(a, CORRECT, now=at(DAY1))  # 数日後 → 学習中
+    first = review.record_answer(b, CORRECT, now=at(DAY1))
+    due = date.fromisoformat(first.next_review)
+    review.record_answer(b, CORRECT, now=at(due))  # 期日どおりにもう一度正解 → 1 週間以上 → 定着中
     assert history.mastery_distribution() == {"未学習": 1, "学習中": 1, "定着中": 1, "習得": 0}
 
 
 def test_upcoming_reviews_include_overdue_today(repo, review, history):
     a, b = add(repo, "A"), add(repo, "B")
-    review.record_answer(a, WRONG, now=at(DAY1))  # 11/2 が復習日
-    review.record_answer(b, CORRECT, now=at(DAY1))  # 11/4 が復習日
-    upcoming = dict(history.upcoming_reviews(date(2026, 11, 3), 3))
-    assert upcoming == {date(2026, 11, 3): 1, date(2026, 11, 4): 1, date(2026, 11, 5): 0}
+    review.record_answer(a, WRONG, now=at(DAY1))  # 11/2 が復習日(11/3 から見ると期限切れ)
+    b_due = date.fromisoformat(review.record_answer(b, EASY, now=at(DAY1)).next_review)
+    upcoming = dict(history.upcoming_reviews(date(2026, 11, 3), 10))
+    assert upcoming[date(2026, 11, 3)] == 1  # 期限切れの a は「今日」に含める
+    assert upcoming[b_due] == 1 and sum(upcoming.values()) == 2
 
 
 def test_weak_vocab_order(repo, review, history):

@@ -158,7 +158,7 @@ def vocab_card(
         parts.append('<p class="vg-label">学習状況</p>')
         parts.append(
             f'<p class="vg-text">次回復習 {e(review.next_review)}(間隔 {review.interval_days}日)'
-            f" ・ 正解 {review.correct_count} / 自信なし {review.unsure_count}"
+            f" ・ 正解 {review.total_correct} / 自信なし {review.unsure_count}"
             f" / 不正解 {review.wrong_count}</p>"
         )
 

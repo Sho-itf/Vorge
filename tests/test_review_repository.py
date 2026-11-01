@@ -2,8 +2,9 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
+from vorge.db import get_connection
 from vorge.flashcard.repository import ReviewRepository
-from vorge.flashcard.scheduler import CORRECT, UNSURE, WRONG
+from vorge.flashcard.scheduler import CORRECT, EASY, WRONG
 from vorge.vocab.models import Vocab
 
 DAY1 = datetime(2026, 11, 1, 9, 0)
@@ -21,20 +22,35 @@ def add(repo, word="俯瞰", **kw):
 def test_record_answer_updates_state_and_log(repo, review):
     vid = add(repo)
     state = review.record_answer(vid, CORRECT, now=DAY1)
-    assert state.interval_days == 3
-    assert state.next_review == "2026-11-04"
+    assert state.interval_days >= 1
+    assert state.next_review == (DAY1.date() + timedelta(days=state.interval_days)).isoformat()
     assert (state.review_count, state.correct_count) == (1, 1)
+    assert state.fsrs_card  # FSRS のカードが保存されている
 
-    state = review.record_answer(vid, WRONG, now=DAY1 + timedelta(days=3))
-    assert state.interval_days == 1
-    assert state.next_review == "2026-11-05"
+    later = DAY1 + timedelta(days=state.interval_days)
+    state = review.record_answer(vid, WRONG, now=later)
+    assert state.next_review == (later.date() + timedelta(days=state.interval_days)).isoformat()
     assert (state.review_count, state.correct_count, state.wrong_count) == (2, 1, 1)
 
-    state = review.record_answer(vid, UNSURE, now=DAY1 + timedelta(days=4))
-    assert state.interval_days == 1
-    assert state.unsure_count == 1
+    state = review.record_answer(vid, EASY, now=later + timedelta(days=1))
+    assert (state.easy_count, state.total_correct) == (1, 2)
 
-    assert [h["result"] for h in review.history(vid)] == [UNSURE, WRONG, CORRECT]
+    assert [h["result"] for h in review.history(vid)] == [EASY, WRONG, CORRECT]
+
+
+def test_legacy_state_is_converted_on_next_answer(repo, review):
+    """以前の方式で学習した語彙(fsrs_card が空)も、次の回答で FSRS に変換される。"""
+    vid = add(repo)
+    with get_connection(repo.db_path) as conn:
+        conn.execute(
+            "INSERT INTO review_state (vocab_id, interval_days, next_review, review_count, correct_count, "
+            "unsure_count, wrong_count, last_result, last_studied_at) "
+            "VALUES (?, 8, '2026-11-01', 2, 2, 0, 0, 'correct', '2026-10-24 09:00:00')",
+            (vid,),
+        )
+    state = review.record_answer(vid, CORRECT, now=DAY1)
+    assert state.interval_days > 8  # 以前の間隔を引き継いで延びる
+    assert state.fsrs_card and state.review_count == 3
 
 
 def test_queue_puts_due_before_new(repo, review):

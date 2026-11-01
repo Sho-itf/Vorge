@@ -108,12 +108,20 @@ def _normalize(text: str) -> str:
     return "".join(unicodedata.normalize("NFKC", text).split())
 
 
-def is_correct_input(answer: str, question: Question) -> bool:
-    """入力式の採点。語彙・読み(ひらがな)・例文中の表記のどれでも正解にする。"""
+def matches_word(answer: str, word: str, reading: str = "", extra_forms: list[str] = ()) -> bool:
+    """入力した答えが語彙に一致するか。語彙・読み(ひらがな)・活用形・extra_forms のどれでも正解にする。
+
+    全角/半角と空白の違いは無視する。
+    """
     given = _normalize(answer)
     if not given:
         return False
-    accepted = {question.word, question.blank.answer, *word_variants(question.word)}
-    if question.reading:
-        accepted |= {question.reading, *word_variants(question.reading)}
+    accepted = {word, *extra_forms, *word_variants(word)}
+    if reading:
+        accepted |= {reading, *word_variants(reading)}
     return given in {_normalize(a) for a in accepted}
+
+
+def is_correct_input(answer: str, question: Question) -> bool:
+    """穴埋めクイズの入力式の採点。例文中の表記(活用形)でも正解にする。"""
+    return matches_word(answer, question.word, question.reading, [question.blank.answer])

@@ -80,7 +80,7 @@ def test_flashcard_answer_flow(app):
     open_page(app, "views/flashcard.py")
     click(app, "学習をはじめる")
     click(app, "答えを見る")
-    click(app, "正解")
+    click(app, "✅ 正解")
     assert any("2 /" in p.text for p in app.get("progress"))
 
 
@@ -169,11 +169,11 @@ def test_flashcard_wrong_answer_comes_back_once_without_recording(app):
     app.number_input(key="fc_setting_new_limit").set_value(1).run()
     click(app, "学習をはじめる")
     click(app, "答えを見る")
-    click(app, "不正解")
+    click(app, "❌ 不正解")
     # 1 枚だけの出題に、間違えた語彙が「もう一度」として追加される
     assert app.session_state["fc_queue"] == [app.session_state["fc_queue"][0]] * 2
     click(app, "答えを見る")
-    click(app, "正解")
+    click(app, "✅ 正解")
     assert len(app.session_state["fc_results"]) == 1  # 2 回目は記録しない
     assert app.session_state["fc_retry_results"] == ["correct"]
     assert ReviewRepository(config.DB_PATH).count_answers_on(date.today()) == 1
@@ -210,3 +210,18 @@ def test_trash_tab_restore_and_library_link(app):
     app.query_params["vocab"] = str(vid)
     open_page(app, "views/library.py")
     assert "vocab" not in app.query_params
+
+
+def test_flashcard_cloze_with_typed_answer(app):
+    open_page(app, "views/flashcard.py")
+    app.radio(key="fc_setting_mode").set_value("cloze").run()
+    app.toggle(key="fc_setting_input").set_value(True).run()
+    click(app, "学習をはじめる")
+    assert any("空欄に入る語彙" in m.value for m in app.markdown)
+    vocab = VocabRepository(config.DB_PATH).get(app.session_state["fc_queue"][0])
+    app.text_input[0].input(vocab.word)  # フォームの中の入力は、送信ボタンと同時に送る
+    click(app, "答え合わせ")
+    assert app.session_state["fc_typed_ok"] is True
+    assert any("正解です" in s.value for s in app.success)
+    click(app, "🌟 簡単")
+    assert app.session_state["fc_results"][0]["結果"] == "簡単"
