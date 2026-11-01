@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from vorge import timeutil
 from vorge.db import get_connection
 from vorge.flashcard.repository import ReviewRepository
 from vorge.writing import prompts as P
@@ -232,13 +233,14 @@ class WritingRepository:
     def count_writing_days(self) -> int:
         with self._connect() as conn:
             return conn.execute(
-                "SELECT COUNT(DISTINCT date(created_at)) FROM writings"
+                f"SELECT COUNT(DISTINCT {timeutil.sql_date('created_at')}) FROM writings"
             ).fetchone()[0]
 
     def count_writings_on(self, day: date) -> int:
         with self._connect() as conn:
             return conn.execute(
-                "SELECT COUNT(*) FROM writings WHERE date(created_at) = ?", (day.isoformat(),)
+                f"SELECT COUNT(*) FROM writings WHERE {timeutil.sql_date('created_at')} = ?",
+                (day.isoformat(),),
             ).fetchone()[0]
 
     # ---------- 使う語彙の選択 ----------

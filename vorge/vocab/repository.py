@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from vorge import timeutil
 from vorge.db import get_connection
 from vorge.vocab.models import CSV_COLUMNS, UNCATEGORIZED, Vocab
 
@@ -127,7 +128,7 @@ class VocabRepository:
         """指定日に登録された語彙の数。"""
         with self._connect() as conn:
             return conn.execute(
-                "SELECT COUNT(*) FROM vocab WHERE date(created_at) = ?",
+                f"SELECT COUNT(*) FROM vocab WHERE {timeutil.sql_date('created_at')} = ?",
                 (day.isoformat(),),
             ).fetchone()[0]
 

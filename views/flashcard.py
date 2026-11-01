@@ -4,11 +4,11 @@
 項目の一覧は vorge/flashcard/session.py を参照。
 """
 
-from datetime import date
 
 import pandas as pd
 import streamlit as st
 
+from vorge import timeutil
 from vorge.flashcard import scheduler, session
 from vorge.flashcard.repository import ReviewRepository
 from vorge.ui.components import flash_front, vocab_card
@@ -42,7 +42,7 @@ def save_difficulty() -> None:
 
 # ============ 設定画面 ============
 def show_settings() -> None:
-    today = date.today()
+    today = timeutil.today()
     if vocab_repo.count() == 0:
         st.info("出題できる語彙がありません。先に語彙を登録してください。")
         st.page_link("views/csv_io.py", label="CSVから読み込む", icon=":material/upload:")
