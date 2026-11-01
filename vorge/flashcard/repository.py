@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
+from vorge import timeutil
 from vorge.db import get_connection
 from vorge.flashcard import scheduler
 from vorge.history.repository import HistoryRepository
@@ -65,7 +66,7 @@ class ReviewRepository:
         # next_interval は不明な result で ValueError を出すので、
         # 下の SQL に埋め込む {result}_count は必ず 3 種類の列名のどれかになる
         interval = scheduler.next_interval(current.interval_days if current else None, result)
-        next_review = scheduler.next_review_date(now.date(), interval).isoformat()
+        next_review = scheduler.next_review_date(timeutil.logical_date(now), interval).isoformat()
         studied_at = now.strftime("%Y-%m-%d %H:%M:%S")
 
         with self._connect() as conn:
@@ -201,10 +202,10 @@ class ReviewRepository:
         """指定日に「はじめて」学習した語彙の数。"""
         with self._connect() as conn:
             return conn.execute(
-                """
+                f"""
                 SELECT COUNT(*) FROM (
                     SELECT vocab_id FROM study_log
-                    GROUP BY vocab_id HAVING date(MIN(studied_at)) = ?
+                    GROUP BY vocab_id HAVING {timeutil.sql_date('MIN(studied_at)')} = ?
                 )
                 """,
                 (day.isoformat(),),
@@ -213,7 +214,8 @@ class ReviewRepository:
     def count_answers_on(self, day: date) -> int:
         with self._connect() as conn:
             return conn.execute(
-                "SELECT COUNT(*) FROM study_log WHERE date(studied_at) = ?", (day.isoformat(),)
+                f"SELECT COUNT(*) FROM study_log WHERE {timeutil.sql_date('studied_at')} = ?",
+                (day.isoformat(),),
             ).fetchone()[0]
 
     def ids_in_group(self, group: str) -> list[int]:

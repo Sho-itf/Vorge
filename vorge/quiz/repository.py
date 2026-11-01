@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
+from vorge import timeutil
 from vorge.db import get_connection
 from vorge.flashcard.repository import ReviewRepository
 from vorge.quiz.builder import Question, blanks_for, make_question, pick_distractors
@@ -151,7 +152,7 @@ class QuizRepository:
         with self._connect() as conn:
             total, correct = conn.execute(
                 "SELECT COUNT(*), SUM(correct) FROM quiz_log "
-                "WHERE date(answered_at) BETWEEN ? AND ?",
+                f"WHERE {timeutil.sql_date('answered_at')} BETWEEN ? AND ?",
                 (start.isoformat(), end.isoformat()),
             ).fetchone()
         return (correct or 0) / total if total else None

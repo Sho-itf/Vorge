@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from vorge import config
+from vorge import config, timeutil
 from vorge.db import init_db
 from vorge.flashcard.repository import ReviewRepository
 from vorge.quiz.repository import FORMAT_CHOICE, QuizRepository
@@ -188,3 +188,11 @@ def test_quiz_report_bad_question(app):
     assert QuizRepository(config.DB_PATH).total_answers() == 0
     assert len(QuizRepository(config.DB_PATH).excluded_examples()) == 1
     assert app.session_state["qz_results"] == []
+
+
+def test_settings_page_changes_day_start(app):
+    open_page(app, "views/settings.py")
+    app.selectbox[0].set_value(6).run()
+    assert not app.exception
+    assert timeutil.day_start_hour() == 6
+    timeutil.set_day_start_hour(timeutil.DEFAULT_DAY_START_HOUR)  # ほかのテストに影響しないよう戻す

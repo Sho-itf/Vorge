@@ -209,7 +209,7 @@ with tab_list:
             "まだ語彙が登録されていません。\n\n"
             "上の「➕ 新規追加」タブから登録するか、CSV からまとめて読み込んでください。"
         )
-        st.page_link("views/csv_io.py", label="CSV入出力へ", icon=":material/upload:")
+        st.page_link("views/csv_io.py", label="データ管理へ", icon=":material/upload:")
         st.stop()
 
     # ---- 絞り込み条件 ----

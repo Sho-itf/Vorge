@@ -1,10 +1,10 @@
 """ホーム画面:学習状況のまとめと、各機能への入口。"""
 
-from datetime import date
 from html import escape
 
 import streamlit as st
 
+from vorge import timeutil
 from vorge.flashcard.repository import ReviewRepository
 from vorge.vocab.repository import VocabRepository
 
@@ -20,7 +20,7 @@ if total == 0:
     with st.container(border=True):
         st.subheader("ようこそ!まずは語彙を登録しましょう")
         st.markdown(
-            "1. **CSV入出力** で同梱のサンプル語彙(99語)や手持ちの CSV を読み込む\n"
+            "1. **データ管理** で同梱のサンプル語彙(200語)や手持ちの CSV を読み込む\n"
             "2. または **語彙ライブラリ** の「新規追加」から 1 語ずつ登録する"
         )
         c1, c2, _ = st.columns([1, 1, 2])
@@ -29,7 +29,7 @@ if total == 0:
     st.write("")
 
 # ---------- 今日の状況 ----------
-today = date.today()
+today = timeutil.today()
 due = review_repo.count_due(today)
 
 st.subheader("今日の状況")
@@ -78,8 +78,8 @@ features = [
      "回答数・正答率の推移と、苦手な語彙を確認する"),
     ("views/library.py", "語彙ライブラリ", ":material/menu_book:",
      "語彙の検索・閲覧・追加・編集・削除"),
-    ("views/csv_io.py", "CSV入出力", ":material/swap_vert:",
-     "CSV からの一括登録と、バックアップ用の書き出し"),
+    ("views/csv_io.py", "データ管理", ":material/database:",
+     "CSV の取り込み・書き出しと、バックアップ・復元"),
 ]
 PER_ROW = 3
 for start in range(0, len(features), PER_ROW):

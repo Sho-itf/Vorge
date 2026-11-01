@@ -1,4 +1,4 @@
-"""CSV入出力画面:CSV からの一括インポートと、CSV へのエクスポート。
+"""データ管理画面:CSV のインポート・エクスポートと、バックアップ。
 
 インポートは 3 ステップ:
   ① ファイルを選ぶ → ② 検証結果を確認(まだ保存しない)→ ③「インポートを実行」で保存
@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from vorge import config
+from vorge.ui.backup_panel import show_backup_panel
 from vorge.vocab.csv_io import (
     CsvFormatError,
     ParseResult,
@@ -24,8 +25,10 @@ from vorge.vocab.repository import VocabRepository
 repo = VocabRepository()
 st.session_state.setdefault("uploader_version", 0)  # アップロード欄をリセットするための番号
 
-st.title("CSV入出力")
-tab_import, tab_export = st.tabs(["📥 インポート", "📤 エクスポート"])
+st.title("データ管理")
+tab_import, tab_export, tab_backup = st.tabs(
+    ["📥 CSVインポート", "📤 CSVエクスポート", "💾 バックアップ"]
+)
 
 
 def show_format_help() -> None:
@@ -285,3 +288,7 @@ with tab_export:
             type="primary",
             disabled=not vocabs,
         )
+
+# ============ バックアップ ============
+with tab_backup:
+    show_backup_panel()

@@ -1,11 +1,12 @@
 """学習履歴画面:学習の続き具合、正答率、苦手な語彙、今後の復習予定。"""
 
-from datetime import date, timedelta
+from datetime import timedelta
 
 import altair as alt
 import pandas as pd
 import streamlit as st
 
+from vorge import timeutil
 from vorge.flashcard import scheduler, session
 from vorge.history.repository import HistoryRepository
 from vorge.quiz.repository import QuizRepository
@@ -14,7 +15,7 @@ from vorge.writing.repository import WritingRepository
 repo = HistoryRepository()
 writing_repo = WritingRepository()
 quiz_repo = QuizRepository()
-today = date.today()
+today = timeutil.today()
 
 # 回答結果の色(状態を表す色。正解=緑、自信がない=黄、不正解=赤)。凡例とツールチップで文字でも区別できる
 RESULT_COLORS = {"正解": "#0ca30c", "自信がない": "#fab219", "不正解": "#d03b3b"}

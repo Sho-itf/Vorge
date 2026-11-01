@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
+from vorge import timeutil
 from vorge.db import get_connection
 from vorge.flashcard import scheduler
 
@@ -81,9 +82,9 @@ class HistoryRepository:
         """start〜end(両端を含む)の正答率。回答が無ければ None。"""
         with self._connect() as conn:
             row = conn.execute(
-                """
+                f"""
                 SELECT COUNT(*), SUM(result = ?) FROM study_log
-                WHERE date(studied_at) BETWEEN ? AND ?
+                WHERE {timeutil.sql_date('studied_at')} BETWEEN ? AND ?
                 """,
                 (scheduler.CORRECT, start.isoformat(), end.isoformat()),
             ).fetchone()
@@ -94,7 +95,7 @@ class HistoryRepository:
         """今日(まだなら昨日)からさかのぼって、毎日学習が続いている日数。"""
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT DISTINCT date(studied_at) FROM study_log WHERE date(studied_at) <= ?",
+                f"SELECT DISTINCT {timeutil.sql_date('studied_at')} AS d FROM study_log WHERE d <= ?",
                 (today.isoformat(),),
             ).fetchall()
         days = {date.fromisoformat(r[0]) for r in rows}
@@ -111,9 +112,9 @@ class HistoryRepository:
         """start〜end の日ごとの回答数。回答が無い日も 0 件として含める。"""
         with self._connect() as conn:
             rows = conn.execute(
-                """
-                SELECT date(studied_at) AS d, result, COUNT(*) AS n FROM study_log
-                WHERE date(studied_at) BETWEEN ? AND ?
+                f"""
+                SELECT {timeutil.sql_date('studied_at')} AS d, result, COUNT(*) AS n FROM study_log
+                WHERE d BETWEEN ? AND ?
                 GROUP BY d, result
                 """,
                 (start.isoformat(), end.isoformat()),
