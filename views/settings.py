@@ -1,10 +1,23 @@
 """設定画面:「今日」の区切り時刻、1 日の目標など、アプリ全体の設定。"""
 
+import socket
+
 import streamlit as st
 
 from vorge import daily, timeutil
 from vorge.settings import set_setting
 from vorge.ui.components import set_flash
+
+
+def lan_address() -> str:
+    """この PC の、家のネットワーク内での IP アドレス(分からなければ「この PC の IP アドレス」)。"""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("192.168.0.1", 80))  # 実際には通信しない。使われる自分側のアドレスを調べるだけ
+            return s.getsockname()[0]
+    except OSError:
+        return "この PC の IP アドレス"
+
 
 st.title("設定")
 
@@ -33,3 +46,10 @@ with st.container(border=True):
             set_setting(key, int(value))
             set_flash("目標を保存しました")
             st.rerun()
+
+with st.container(border=True):
+    st.markdown("#### スマホ・タブレットから使う")
+    st.write("この PC で Vorge を起動している間は、同じ Wi-Fi につながったスマホやタブレットのブラウザから開けます。")
+    st.code(f"http://{lan_address()}:{st.get_option('server.port')}", language=None)
+    st.caption("開けないときは、Windows のファイアウォールで Python の通信が「プライベート ネットワーク」で"
+               "許可されているか確認してください。外出先からは開けません。")
