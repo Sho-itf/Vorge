@@ -10,8 +10,8 @@ import streamlit as st
 
 from vorge.quiz.builder import Question, is_correct_input
 from vorge.quiz.repository import FORMAT_CHOICE, FORMAT_INPUT, FORMAT_LABELS, SCOPE_LABELS, QuizRepository
-from vorge.settings import get_setting, set_setting
-from vorge.ui.components import ruby_html
+from vorge.ui.components import html, ruby_html
+from vorge.ui.persist import load_settings, save_setting
 from vorge.vocab.repository import VocabRepository
 
 repo = QuizRepository()
@@ -19,28 +19,18 @@ vocab_repo = VocabRepository()
 ss = st.session_state
 
 # ---------- 出題条件(前回の選択を DB から読み込み、変更したら保存する) ----------
-SETTING_KEYS = {
+DEFAULT_DIFFICULTY = (1, 5)
+load_settings({
     "qz_scope": "all",
     "qz_format": FORMAT_CHOICE,
     "qz_count": 10,
     "qz_categories": [],
-    "qz_difficulty": [1, 5],
-}
-for key, default in SETTING_KEYS.items():
-    if key not in ss:
-        ss[key] = get_setting(key, default)
-    if ss[key] is None:  # segmented_control で選択が外れた場合
-        ss[key] = default
+    "qz_difficulty": DEFAULT_DIFFICULTY,
+})
 # 難易度は (下限, 上限) の 2 つの値。JSON から読むとリストになるのでタプルに直し、壊れていれば初期値に戻す
 if not (isinstance(ss.qz_difficulty, (list, tuple)) and len(ss.qz_difficulty) == 2):
-    ss.qz_difficulty = SETTING_KEYS["qz_difficulty"]
+    ss.qz_difficulty = DEFAULT_DIFFICULTY
 ss.qz_difficulty = tuple(ss.qz_difficulty)
-
-
-def save_setting(key: str) -> None:
-    value = ss[key]
-    if value is not None:
-        set_setting(key, list(value) if isinstance(value, tuple) else value)
 
 
 def save_difficulty() -> None:
@@ -65,15 +55,11 @@ def start(questions: list[Question]) -> None:
 
 
 def answer(question: Question, given: str, correct: bool) -> None:
-    repo.record(question.vocab_id, ss.qz_format, correct, given)
-    ss.qz_answer = {"given": given, "correct": correct}
+    log_id = repo.record(question.vocab_id, ss.qz_format, correct, given)
+    ss.qz_answer = {"given": given, "correct": correct, "log_id": log_id}
     ss.qz_results.append(
         {"vocab_id": question.vocab_id, "word": question.word, "correct": correct, "given": given}
     )
-
-
-def html(container, body: str) -> None:
-    container.markdown(body, unsafe_allow_html=True)
 
 
 def sentence_html(q: Question, filled: bool) -> str:
@@ -118,6 +104,15 @@ def show_settings() -> None:
                 "この条件で出題できる語彙がありません。条件を広げてください"
                 "(例文の中に語彙が含まれている語彙だけが出題されます)。"
             )
+        excluded = repo.excluded_examples()
+        if excluded:
+            with st.expander(f"⚠️ 出題しない例文({len(excluded)} 件)"):
+                for row in excluded:
+                    c1, c2 = st.columns([5, 1], vertical_alignment="center")
+                    c1.markdown(f"**{escape(row['word'])}**:{escape(row['sentence'])}")
+                    if c2.button("元に戻す", key=f"restore_{row['id']}"):
+                        repo.restore_example(row["id"])
+                        st.rerun()
         if st.button("▶ クイズをはじめる", type="primary", disabled=not eligible):
             start(repo.build_questions(ss.qz_count, ss.qz_scope, ss.qz_categories,
                                        ss.qz_difficulty))
@@ -187,6 +182,16 @@ def show_question() -> None:
         elif vocab:
             html(st, f'<div class="vg-card"><div class="vg-list-word">{ruby_html(vocab.word, vocab.reading)}</div>'
                      f'<div class="vg-list-text">{escape(vocab.meaning)}</div></div>')
+        if not result.get("excluded"):
+            if st.button("⚠️ この問題はおかしい", type="tertiary",
+                         help="はずれの選択肢でも文が成り立つなど、問題として不適切な場合に押します。"
+                         "この例文は今後出題されず、この問題の回答も記録から外します。"):
+                repo.exclude_example(q.vocab_id, q.blank.sentence, result["log_id"])
+                result["excluded"] = True
+                ss.qz_results.pop()  # 結果画面の集計からも外す
+                st.rerun()
+        else:
+            st.caption("⚠️ この例文は今後出題しません(回答の記録も取り消しました)。")
         last = pos == len(questions) - 1
         if st.button("結果を見る" if last else "次の問題へ →", type="primary", width="stretch"):
             ss.qz_pos += 1

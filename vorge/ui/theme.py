@@ -43,7 +43,8 @@ div.vg-card p.vg-text { line-height: 1.8; margin: 0; }
     border: 1px solid rgba(128, 128, 128, 0.3);
 }
 .vg-badge-sub { background: rgba(16, 185, 129, 0.16); }
-.vg-stars { color: #f59e0b; letter-spacing: 0.05em; }
+.vg-stars { color: #f59e0b; letter-spacing: 0.05em; white-space: nowrap; }
+.vg-list-stars { font-size: 0.8rem; letter-spacing: 0; }
 
 /* フラッシュカードの問題面 */
 div.vg-card.vg-flash {
@@ -64,6 +65,11 @@ div[class*="st-key-vrow-"], .st-key-vlist-head {
 }
 .st-key-vlist-head { border-bottom-width: 2px; padding-bottom: 0.35rem; }
 div[class*="st-key-vrow-"]:hover { background: rgba(128, 128, 128, 0.06); }
+/* 狭い画面でも 1 行に収め、一番右の列(「詳細」ボタンなど)は文字が切れないよう最小幅を確保する */
+div[class*="st-key-vrow-"] [data-testid="stHorizontalBlock"],
+.st-key-vlist-head [data-testid="stHorizontalBlock"] { flex-wrap: nowrap; }
+div[class*="st-key-vrow-"] [data-testid="stColumn"]:last-child,
+.st-key-vlist-head [data-testid="stColumn"]:last-child { min-width: 3.5em; flex: 0 0 3.5em; }
 .vg-list-head { font-size: 0.8rem; font-weight: 600; opacity: 0.6; }
 .vg-list-word { font-size: 1.3rem; font-weight: 700; line-height: 1.9; }
 .vg-list-word rt { font-size: 0.55em; font-weight: 400; opacity: 0.7; }
@@ -96,6 +102,9 @@ div.vg-card.vg-quiz p.vg-quiz-text { font-size: 1.5rem; line-height: 1.9; margin
 .vg-choice-row:last-child { border-bottom: none; }
 .vg-choice-mark { width: 1.4em; flex: none; }
 .vg-choice-row .vg-list-word { min-width: 6em; flex: none; }
+
+.vg-record-item { padding: 0.35rem 0; border-bottom: 1px solid rgba(128, 128, 128, 0.15); }
+.vg-record-item .vg-muted { font-size: 0.8rem; }
 
 /* ホーム画面の機能カード */
 .vg-feature-desc { opacity: 0.7; font-size: 0.9rem; min-height: 2.8em; }

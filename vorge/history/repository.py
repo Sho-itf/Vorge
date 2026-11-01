@@ -22,20 +22,42 @@ class DailyCount:
 
 @dataclass
 class WeakVocab:
+    """苦手な語彙。フラッシュカードと穴埋めクイズの結果を合わせて判定する。"""
+
     vocab_id: int
     word: str
     meaning: str
-    review_count: int
-    correct_count: int
-    unsure_count: int
-    wrong_count: int
-    last_result: str
-    next_review: str
+    correct_count: int  # フラッシュカード:正解
+    unsure_count: int  # フラッシュカード:自信がない
+    wrong_count: int  # フラッシュカード:不正解
+    quiz_correct: int
+    quiz_wrong: int
+    last_result: str | None  # フラッシュカードの前回の結果(未学習なら None)
+    next_review: str | None
+    accuracy: float  # 合計の正答率(「自信がない」は 0.5 回の正解として数える)
 
-    @property
-    def accuracy(self) -> float:
-        """正答率(正解 ÷ 全回答)。「自信がない」は正解に含めない。"""
-        return self.correct_count / self.review_count if self.review_count else 0.0
+
+# この正答率を下回り、かつ間違えたことのある語彙を「苦手」とする
+WEAK_ACCURACY = 0.8
+
+_WEAK_SQL = """
+WITH q AS (
+    SELECT vocab_id, SUM(correct) AS qc, SUM(1 - correct) AS qw FROM quiz_log GROUP BY vocab_id
+),
+s AS (
+    SELECT v.id AS vocab_id, v.word, v.meaning,
+           COALESCE(r.correct_count, 0) AS fc, COALESCE(r.unsure_count, 0) AS fu,
+           COALESCE(r.wrong_count, 0) AS fw, COALESCE(q.qc, 0) AS qc, COALESCE(q.qw, 0) AS qw,
+           r.last_result, r.next_review
+    FROM vocab v
+    LEFT JOIN review_state r ON r.vocab_id = v.id
+    LEFT JOIN q ON q.vocab_id = v.id
+)
+SELECT *, (fc + 0.5 * fu + qc) * 1.0 / (fc + fu + fw + qc + qw) AS acc
+FROM s
+WHERE fw + fu + qw > 0 AND (fc + 0.5 * fu + qc) * 1.0 / (fc + fu + fw + qc + qw) < ?
+ORDER BY acc ASC, fw + qw DESC, vocab_id ASC
+"""
 
 
 class HistoryRepository:
@@ -137,28 +159,25 @@ class HistoryRepository:
 
     # ---------- 一覧 ----------
 
-    def weak_vocab(self, limit: int = 20) -> list[WeakVocab]:
-        """苦手な語彙:不正解か「自信がない」が 1 回以上あり、正答率の低い順。
+    def weak_vocab(self, limit: int | None = 20) -> list[WeakVocab]:
+        """苦手な語彙(正答率の低い順)。全機能の「苦手」はこの判定を共通で使う。
 
-        正答率が同じなら、不正解の回数が多いもの → 最後の回答が不正解のものを先にする。
+        フラッシュカードと穴埋めクイズの回答を合わせた正答率が WEAK_ACCURACY 未満で、
+        不正解か「自信がない」が 1 回以上ある語彙。
+        正答率が同じなら、間違えた回数(フラッシュカード+クイズ)の多いものを先にする。
         """
+        sql = _WEAK_SQL + (" LIMIT ?" if limit is not None else "")
+        params = (WEAK_ACCURACY, limit) if limit is not None else (WEAK_ACCURACY,)
         with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT v.id AS vocab_id, v.word, v.meaning,
-                       r.review_count, r.correct_count, r.unsure_count, r.wrong_count,
-                       r.last_result, r.next_review
-                FROM review_state r JOIN vocab v ON v.id = r.vocab_id
-                WHERE r.wrong_count + r.unsure_count > 0
-                ORDER BY CAST(r.correct_count AS REAL) / r.review_count ASC,
-                         r.wrong_count DESC,
-                         r.last_result = 'wrong' DESC,
-                         v.id ASC
-                LIMIT ?
-                """,
-                (limit,),
-            ).fetchall()
-        return [WeakVocab(**dict(r)) for r in rows]
+            rows = conn.execute(sql, params).fetchall()
+        return [
+            WeakVocab(r["vocab_id"], r["word"], r["meaning"], r["fc"], r["fu"], r["fw"],
+                      r["qc"], r["qw"], r["last_result"], r["next_review"], r["acc"])
+            for r in rows
+        ]
+
+    def weak_ids(self) -> list[int]:
+        return [w.vocab_id for w in self.weak_vocab(limit=None)]
 
     def recent_logs(self, limit: int = 50) -> list[dict]:
         """最近の回答(新しい順)。語彙名つき。"""

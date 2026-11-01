@@ -9,12 +9,15 @@ from vorge.flashcard.repository import ReviewRepository, ReviewState
 from vorge.flashcard.scheduler import mastery_label
 from vorge.ui.components import (
     highlight_html,
+    html,
     ruby_html,
     set_flash,
     stars,
     vocab_card,
     vocab_form,
 )
+from vorge.ui.learning_record import show_learning_record
+from vorge.ui.persist import load_settings, save_setting
 from vorge.vocab.models import Vocab
 from vorge.vocab.repository import SORT_OPTIONS, VocabRepository
 from vorge.writing.repository import WritingRepository
@@ -30,10 +33,13 @@ ss.setdefault("dialog_mode", "view")  # ポップアップの表示内容:view /
 ss.setdefault("add_form_version", 0)  # 追加フォームを空に戻すための番号
 ss.setdefault("page", 0)  # 一覧の何ページ目か(0 始まり)
 ss.setdefault("filter_signature", None)  # 絞り込み条件が変わったか判定するための記録
-# 一覧に追加で表示する項目(「表示する項目」メニューで切り替え。初期値はすべて非表示)
-ss.setdefault("show_category", False)
-ss.setdefault("show_difficulty", True)  # 難易度だけは初期状態で表示
-ss.setdefault("show_mastery", False)
+# 一覧に追加で表示する項目と 1 ページの件数(「表示する項目」メニューで変更。DB に保存して次回も使う)
+load_settings({
+    "show_category": False,
+    "show_difficulty": True,  # 難易度だけは初期状態で表示
+    "show_mastery": False,
+    "page_size": 25,
+})
 
 MASTERY_LEVELS = ["未学習", "学習中", "定着中", "習得"]
 
@@ -50,17 +56,13 @@ def list_columns() -> list[tuple[str, float]]:
     """一覧の列(見出し, 幅の比率)。「表示する項目」の設定で列が増える。"""
     columns = [("語彙", 1.4), ("意味", 2.6), ("例文", 3.6)]
     if ss.show_difficulty:
-        columns.append(("難易度", 0.9))  # 例文のすぐ右
+        columns.append(("難易度", 1.1))  # 例文のすぐ右
     if ss.show_category:
         columns.append(("カテゴリ", 1.3))
     if ss.show_mastery:
         columns.append(("習得状況", 0.8))
-    columns.append(("", 0.7))  # 「詳細」ボタン
+    columns.append(("", 0.8))  # 「詳細」ボタン
     return columns
-
-
-def html(container, body: str) -> None:
-    container.markdown(body, unsafe_allow_html=True)
 
 
 def show_row(v: Vocab, state: ReviewState | None, columns: list[tuple[str, float]]) -> None:
@@ -79,7 +81,7 @@ def show_row(v: Vocab, state: ReviewState | None, columns: list[tuple[str, float
             if name == "カテゴリ":
                 html(col, f'<span class="vg-badge">{escape(v.category)}</span>')
             elif name == "難易度":
-                html(col, f'<span class="vg-stars">{stars(v.difficulty)}</span>')
+                html(col, f'<span class="vg-stars vg-list-stars">{stars(v.difficulty)}</span>')
             elif name == "習得状況":
                 html(col, f'<div class="vg-list-ex">{state.mastery if state else "未学習"}</div>')
         cols[-1].button(
@@ -163,7 +165,8 @@ def detail_dialog(vocab_id: int, categories: list[str]) -> None:
     else:
         vocab_card(vocab, review_repo.get_state(vocab.id))
         used = writing_repo.usage_count(vocab.id)
-        st.caption(f"✍️ 作文で使った回数:{used} 回" if used else "✍️ まだ作文で使っていません")
+        with st.expander(f"📒 学習の記録(作文・議論で使った回数:{used} 回)"):
+            show_learning_record(vocab)
         c1, c2, _ = st.columns([1, 1, 2])
         if c1.button("✏️ 編集", type="primary", width="stretch"):
             ss.dialog_mode = "edit"
@@ -241,10 +244,11 @@ with tab_list:
     info.caption(f"{len(results)} 件 / 全 {total} 件 ・ 「詳細」で例文以外の情報や編集・削除ができます")
     with settings.popover("⚙️ 表示する項目", width="stretch"):
         st.caption("一覧に追加で表示する項目")
-        st.checkbox("難易度", key="show_difficulty")
-        st.checkbox("カテゴリ", key="show_category")
-        st.checkbox("習得状況", key="show_mastery")
-        page_size = st.slider("1 ページの件数", min_value=1, max_value=100, value=25, key="page_size")
+        for key, label in (("show_difficulty", "難易度"), ("show_category", "カテゴリ"),
+                           ("show_mastery", "習得状況")):
+            st.checkbox(label, key=key, on_change=save_setting, args=(key,))
+        page_size = st.slider("1 ページの件数", min_value=1, max_value=100, key="page_size",
+                              on_change=save_setting, args=("page_size",))
 
     if not results:
         st.info("条件に一致する語彙がありません。キーワードや絞り込み条件を変えてみてください。")

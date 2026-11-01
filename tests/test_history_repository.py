@@ -6,6 +6,7 @@ from vorge.flashcard import session
 from vorge.flashcard.repository import ReviewRepository
 from vorge.flashcard.scheduler import CORRECT, UNSURE, WRONG
 from vorge.history.repository import HistoryRepository
+from vorge.quiz.repository import FORMAT_CHOICE, QuizRepository
 from vorge.vocab.models import Vocab
 
 DAY1 = date(2026, 11, 1)
@@ -93,7 +94,25 @@ def test_weak_vocab_order(repo, review, history):
     weak = history.weak_vocab()
     assert [w.word for w in weak] == ["苦手", "普通"]  # 全問正解の語彙は含まない
     assert weak[0].accuracy == 0
-    assert weak[1].accuracy == 0.5
+    assert weak[1].accuracy == 0.75  # 正解 1 + 自信がない 0.5 / 2 回
+
+
+def test_weak_vocab_combines_flashcard_and_quiz(repo, review, history):
+    quiz = QuizRepository(repo.db_path)
+    quiz_only, recovered, still_weak = add(repo, "クイズだけ"), add(repo, "克服"), add(repo, "まだ苦手")
+    quiz.record(quiz_only, FORMAT_CHOICE, False, "x", now=at(DAY1))  # クイズで間違えただけでも苦手
+    review.record_answer(recovered, WRONG, now=at(DAY1))
+    for _ in range(4):
+        quiz.record(recovered, FORMAT_CHOICE, True, "o", now=at(DAY1))  # 正答率 4/5 = 80% → 苦手でない
+    review.record_answer(still_weak, WRONG, now=at(DAY1))
+    for _ in range(3):
+        quiz.record(still_weak, FORMAT_CHOICE, True, "o", now=at(DAY1))  # 3/4 = 75% → まだ苦手
+
+    weak = history.weak_vocab()
+    assert [w.word for w in weak] == ["クイズだけ", "まだ苦手"]
+    assert (weak[0].quiz_wrong, weak[0].next_review) == (1, None)
+    assert history.weak_ids() == [quiz_only, still_weak]
+    assert review.ids_in_group("weak") == [quiz_only, still_weak]  # 他の機能も同じ判定を使う
 
 
 def test_recent_logs(repo, review, history):
@@ -113,3 +132,14 @@ def test_session_start_and_reset():
     assert (state["fc_queue"], state["fc_pos"], state["fc_label"]) == ([3, 1], 0, "苦手な語彙")
     session.reset(state)
     assert state["fc_queue"] is None
+
+
+def test_session_retry_wrong_once():
+    state: dict = {}
+    session.init(state)
+    session.start(state, [1, 2, 3], "word_to_meaning")
+    assert not session.is_retry(state, 2)
+    session.add_retry(state, 2)
+    session.add_retry(state, 2)  # 同じ語彙は 1 回だけ
+    assert state["fc_queue"] == [1, 2, 3, 2]
+    assert session.is_retry(state, 3)

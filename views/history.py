@@ -150,9 +150,13 @@ with right:
 # ---------- 苦手な語彙 ----------
 st.write("")
 st.subheader("苦手な語彙")
+st.caption(
+    "フラッシュカードと穴埋めクイズの結果を合わせた正答率が 80% 未満で、間違えたことのある語彙です"
+    "(「自信がない」は 0.5 回の正解として数えます)。作文・議論・クイズの「苦手な語彙から」も同じ判定です。"
+)
 weak = repo.weak_vocab(limit=20)
 if not weak:
-    st.success("不正解や「自信がない」と答えた語彙はまだありません。")
+    st.success("今のところ苦手な語彙はありません。")
 else:
     st.dataframe(
         pd.DataFrame(
@@ -160,11 +164,10 @@ else:
                 "語彙": [w.word for w in weak],
                 "意味": [w.meaning for w in weak],
                 "正答率": [w.accuracy * 100 for w in weak],
-                "正解": [w.correct_count for w in weak],
-                "自信なし": [w.unsure_count for w in weak],
-                "不正解": [w.wrong_count for w in weak],
-                "前回": [scheduler.RESULT_LABELS[w.last_result] for w in weak],
-                "次回復習": [w.next_review for w in weak],
+                "カード 正/?/×": [f"{w.correct_count} / {w.unsure_count} / {w.wrong_count}"
+                                 for w in weak],
+                "クイズ 正/×": [f"{w.quiz_correct} / {w.quiz_wrong}" for w in weak],
+                "次回復習": [w.next_review or "未学習" for w in weak],
             }
         ),
         hide_index=True,

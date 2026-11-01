@@ -119,3 +119,19 @@ def test_quiz_does_not_touch_review_schedule(repo, quiz):
     a = repo.add(Vocab(word="A", meaning="m"))
     quiz.record(a, FORMAT_CHOICE, True, "A")
     assert ReviewRepository(repo.db_path).get_state(a) is None
+
+
+def test_exclude_example_removes_it_from_quiz_and_log(repo, quiz):
+    vid = repo.add(Vocab(word="俯瞰", meaning="m", example_1="全体を俯瞰する", example_2="俯瞰の視点"))
+    log_id = quiz.record(vid, FORMAT_CHOICE, False, "洞察")
+    quiz.exclude_example(vid, "全体を俯瞰する", log_id)
+    assert quiz.total_answers() == 0  # 回答記録も取り消される
+    assert quiz.excluded_map() == {vid: {"全体を俯瞰する"}}
+    for _ in range(5):
+        q = quiz.build_questions(1)[0]
+        assert q.blank.sentence == "俯瞰の視点"
+
+    quiz.exclude_example(vid, "俯瞰の視点")
+    assert quiz.eligible_vocab() == []  # 出題できる例文が無くなった
+    quiz.restore_example(quiz.excluded_examples()[0]["id"])
+    assert len(quiz.eligible_vocab()) == 1

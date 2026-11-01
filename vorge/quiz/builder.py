@@ -18,6 +18,10 @@ class Blank:
     answer: str  # 例文中の実際の表記(活用していればその形)
     after: str
 
+    @property
+    def sentence(self) -> str:
+        return self.before + self.answer + self.after
+
 
 @dataclass
 class Question:
@@ -40,11 +44,16 @@ def find_blank(sentence: str, word: str) -> Blank | None:
     return None
 
 
-def blanks_for(vocab: Vocab) -> list[Blank]:
-    """その語彙の例文から作れる空欄の一覧(例文 1・2 のうち、語彙が含まれているもの)。"""
+def blanks_for(vocab: Vocab, excluded: set[str] = frozenset()) -> list[Blank]:
+    """その語彙の例文から作れる空欄の一覧(例文 1・2 のうち、語彙が含まれているもの)。
+
+    excluded に入っている例文(「おかしい」と報告されたもの)は使わない。
+    """
     result = []
     for sentence in (vocab.example_1, vocab.example_2):
-        blank = find_blank(sentence, vocab.word) if sentence else None
+        if not sentence or sentence in excluded:
+            continue
+        blank = find_blank(sentence, vocab.word)
         if blank:
             result.append(blank)
     return result

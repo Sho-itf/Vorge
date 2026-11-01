@@ -94,6 +94,12 @@ def find_repeated_words(body: str, exclude: set[str] = frozenset()) -> list[tupl
     return sorted(repeated, key=lambda x: -x[1])[:5]
 
 
+def sentences_with(body: str, word: str, reading: str = "") -> list[str]:
+    """本文のうち、その語彙(活用形・ひらがな書きを含む)が使われている文だけを返す。"""
+    variants = [v for v in word_variants(word, reading) if v]
+    return [s for s in split_sentences(body) if any(v in s for v in variants)]
+
+
 def split_sentences(body: str) -> list[str]:
     parts = (s.strip() for s in _SENTENCE_END.split(body.replace("\n", "")))
     return [s for s in parts if s.strip(_TRAILING)]
