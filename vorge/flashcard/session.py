@@ -4,7 +4,7 @@
 出題を始められるよう、ここにまとめている。
 """
 
-from typing import MutableMapping
+from collections.abc import MutableMapping
 
 from vorge.flashcard import scheduler
 
@@ -19,16 +19,23 @@ def init(state: MutableMapping) -> None:
     state.setdefault("fc_label", "")  # 出題の種類(「苦手な語彙」など)
     state.setdefault("fc_first_count", 0)  # 最初に決めた出題数(これ以降は「もう一度」の分)
     state.setdefault("fc_retry_results", [])  # 「もう一度」の結果(記録には残さない)
+    state.setdefault("fc_input", False)  # 答えを入力してから確認する出題か
+    state.setdefault("fc_typed", None)  # 入力式で入力した答え(入力していなければ None)
+    state.setdefault("fc_typed_ok", False)  # 入力した答えが正解だったか
 
 
-def start(state: MutableMapping, queue: list[int], mode: str, label: str = "") -> None:
-    """新しい出題を始める。"""
+def start(
+    state: MutableMapping, queue: list[int], mode: str, label: str = "", input_answer: bool = False
+) -> None:
+    """新しい出題を始める。出題モードと入力式かどうかは、出題の途中で変わらないようここで決める。"""
     state["fc_queue"] = list(queue)
     state["fc_pos"] = 0
     state["fc_revealed"] = False
     state["fc_mode"] = mode
     state["fc_results"] = []
     state["fc_label"] = label
+    state["fc_input"] = input_answer
+    state["fc_typed"] = None
     state["fc_first_count"] = len(queue)
     state["fc_retry_results"] = []
 

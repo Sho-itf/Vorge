@@ -1,4 +1,7 @@
-streamlit>=1.40
-pandas>=2.0
-python-dotenv>=1.0
-pytest>=8.0
+# アプリの実行に必要なライブラリ(動作確認済みのバージョンに固定)
+# 更新するときは、バージョンを上げてから pytest がすべて通ることを確認する
+streamlit==1.66.1
+altair==6.3.0
+pandas==3.1.0
+python-dotenv==1.2.4
+fsrs==6.3.2

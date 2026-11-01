@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from vorge import config
+from vorge import config, timeutil
 from vorge.db import init_db
 from vorge.flashcard.repository import ReviewRepository
 from vorge.quiz.repository import FORMAT_CHOICE, QuizRepository
@@ -80,7 +80,7 @@ def test_flashcard_answer_flow(app):
     open_page(app, "views/flashcard.py")
     click(app, "学習をはじめる")
     click(app, "答えを見る")
-    click(app, "正解")
+    click(app, "✅ 正解")
     assert any("2 /" in p.text for p in app.get("progress"))
 
 
@@ -169,11 +169,11 @@ def test_flashcard_wrong_answer_comes_back_once_without_recording(app):
     app.number_input(key="fc_setting_new_limit").set_value(1).run()
     click(app, "学習をはじめる")
     click(app, "答えを見る")
-    click(app, "不正解")
+    click(app, "❌ 不正解")
     # 1 枚だけの出題に、間違えた語彙が「もう一度」として追加される
     assert app.session_state["fc_queue"] == [app.session_state["fc_queue"][0]] * 2
     click(app, "答えを見る")
-    click(app, "正解")
+    click(app, "✅ 正解")
     assert len(app.session_state["fc_results"]) == 1  # 2 回目は記録しない
     assert app.session_state["fc_retry_results"] == ["correct"]
     assert ReviewRepository(config.DB_PATH).count_answers_on(date.today()) == 1
@@ -188,3 +188,59 @@ def test_quiz_report_bad_question(app):
     assert QuizRepository(config.DB_PATH).total_answers() == 0
     assert len(QuizRepository(config.DB_PATH).excluded_examples()) == 1
     assert app.session_state["qz_results"] == []
+
+
+def test_settings_page_changes_day_start(app):
+    open_page(app, "views/settings.py")
+    app.selectbox[0].set_value(6).run()
+    assert not app.exception
+    assert timeutil.day_start_hour() == 6
+    timeutil.set_day_start_hour(timeutil.DEFAULT_DAY_START_HOUR)  # ほかのテストに影響しないよう戻す
+
+
+def test_trash_tab_restore_and_library_link(app):
+    repo = VocabRepository(config.DB_PATH)
+    vid = repo.search("俯瞰")[0].id
+    repo.delete(vid)
+    open_page(app, "views/csv_io.py")
+    click(app, "元に戻す")
+    assert repo.get(vid) is not None
+
+    # 他の語彙の詳細からのリンク(?vocab=ID)で、語彙ライブラリが開ける
+    app.query_params["vocab"] = str(vid)
+    open_page(app, "views/library.py")
+    assert "vocab" not in app.query_params
+
+
+def test_flashcard_cloze_with_typed_answer(app):
+    open_page(app, "views/flashcard.py")
+    app.radio(key="fc_setting_mode").set_value("cloze").run()
+    app.toggle(key="fc_setting_input").set_value(True).run()
+    click(app, "学習をはじめる")
+    assert any("空欄に入る語彙" in m.value for m in app.markdown)
+    vocab = VocabRepository(config.DB_PATH).get(app.session_state["fc_queue"][0])
+    app.text_input[0].input(vocab.word)  # フォームの中の入力は、送信ボタンと同時に送る
+    click(app, "答え合わせ")
+    assert app.session_state["fc_typed_ok"] is True
+    assert any("正解です" in s.value for s in app.success)
+    click(app, "🌟 簡単")
+    assert app.session_state["fc_results"][0]["結果"] == "簡単"
+
+
+def test_home_daily_menu_starts_flashcard(app):
+    open_page(app, "views/home.py")
+    assert any("今日の学習" in s.value for s in app.subheader)
+    click(app, "続きから")
+    assert app.session_state["fc_label"] == "今日の学習"
+    assert len(app.session_state["fc_queue"]) == len(WORDS)  # 目標 10 語 > 登録 6 語なので全部
+
+
+def test_reading_flow(app):
+    open_page(app, "views/reading.py")
+    app.text_area[0].input("物事を俯瞰して捉える。杞憂に終わる懸念もある。")
+    click(app, "保存して読む")
+    assert any("vg-known" in m.value for m in app.markdown)  # 登録済みの「俯瞰」に印
+    app.multiselect[0].select("杞憂")
+    click(app, "登録候補に追加")
+    open_page(app, "views/reading.py")
+    assert any("杞憂" in e.label for e in app.expander)

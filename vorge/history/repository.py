@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
+from vorge import timeutil
 from vorge.db import get_connection
 from vorge.flashcard import scheduler
 
@@ -46,7 +47,7 @@ WITH q AS (
 ),
 s AS (
     SELECT v.id AS vocab_id, v.word, v.meaning,
-           COALESCE(r.correct_count, 0) AS fc, COALESCE(r.unsure_count, 0) AS fu,
+           COALESCE(r.correct_count + r.easy_count, 0) AS fc, COALESCE(r.unsure_count, 0) AS fu,
            COALESCE(r.wrong_count, 0) AS fw, COALESCE(q.qc, 0) AS qc, COALESCE(q.qw, 0) AS qw,
            r.last_result, r.next_review
     FROM vocab v
@@ -81,11 +82,11 @@ class HistoryRepository:
         """start〜end(両端を含む)の正答率。回答が無ければ None。"""
         with self._connect() as conn:
             row = conn.execute(
-                """
-                SELECT COUNT(*), SUM(result = ?) FROM study_log
-                WHERE date(studied_at) BETWEEN ? AND ?
+                f"""
+                SELECT COUNT(*), SUM(result IN (?, ?)) FROM study_log
+                WHERE {timeutil.sql_date('studied_at')} BETWEEN ? AND ?
                 """,
-                (scheduler.CORRECT, start.isoformat(), end.isoformat()),
+                (*scheduler.CORRECT_RESULTS, start.isoformat(), end.isoformat()),
             ).fetchone()
         total, correct = row[0], row[1] or 0
         return correct / total if total else None
@@ -94,7 +95,7 @@ class HistoryRepository:
         """今日(まだなら昨日)からさかのぼって、毎日学習が続いている日数。"""
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT DISTINCT date(studied_at) FROM study_log WHERE date(studied_at) <= ?",
+                f"SELECT DISTINCT {timeutil.sql_date('studied_at')} AS d FROM study_log WHERE d <= ?",
                 (today.isoformat(),),
             ).fetchall()
         days = {date.fromisoformat(r[0]) for r in rows}
@@ -111,9 +112,9 @@ class HistoryRepository:
         """start〜end の日ごとの回答数。回答が無い日も 0 件として含める。"""
         with self._connect() as conn:
             rows = conn.execute(
-                """
-                SELECT date(studied_at) AS d, result, COUNT(*) AS n FROM study_log
-                WHERE date(studied_at) BETWEEN ? AND ?
+                f"""
+                SELECT {timeutil.sql_date('studied_at')} AS d, result, COUNT(*) AS n FROM study_log
+                WHERE d BETWEEN ? AND ?
                 GROUP BY d, result
                 """,
                 (start.isoformat(), end.isoformat()),
@@ -123,7 +124,9 @@ class HistoryRepository:
             for i in range((end - start).days + 1)
         }
         for r in rows:
-            setattr(days[date.fromisoformat(r["d"])], r["result"], r["n"])
+            day = days[date.fromisoformat(r["d"])]
+            name = "correct" if r["result"] in scheduler.CORRECT_RESULTS else r["result"]  # 「簡単」は正解に含める
+            setattr(day, name, getattr(day, name) + r["n"])
         return list(days.values())
 
     def upcoming_reviews(self, today: date, days: int = 7) -> list[tuple[date, int]]:

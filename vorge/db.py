@@ -1,29 +1,30 @@
-"""SQLite への接続とテーブル作成を担当するモジュール。
+"""SQLite への接続と、テーブルの作成・移行(バージョンアップ)を担当するモジュール。
 
-ここではテーブルを「無ければ作る」だけで、既存データを消す処理は一切行わない。
+既存データを消す処理は一切行わない。テーブル構造の変更は MIGRATIONS に「移行処理」を足して行う。
 """
 
 import sqlite3
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
 
-from vorge import config
+from vorge import backup, config
 from vorge.vocab.models import DEFAULT_CATEGORIES
 from vorge.writing.prompts import DEFAULT_PROMPTS
 
-# テーブル構造を変えるときにこの数字を上げ、init_db() に移行処理を追加する
+# ---------- バージョン 6 までのテーブル(「基準のテーブル構造」) ----------
 #   1: vocab, categories
 #   2: review_state, study_log(フラッシュカード・学習履歴)
 #   3: app_settings, writing_prompts, writings, writing_vocab(作文トレーニング)
 #   4: quiz_log(穴埋めクイズ)
 #   5: writings に stance / template / sections 列を追加(議論トレーニング)
 #   6: quiz_excluded(穴埋めクイズで「おかしい」と報告した例文)
-SCHEMA_VERSION = 6
+# バージョン 6 までは「無ければ作る」方式で足してきたので、まとめて 1 つの移行処理(_baseline)として扱う。
+# バージョン 7 以降は MIGRATIONS に 1 バージョンずつ移行処理を足していく。
 
 # 既存のテーブルに後から追加した列(テーブル名 → [(列名, 型と既定値)])。
 # CREATE TABLE IF NOT EXISTS は既存のテーブルを変更しないので、無ければ ALTER TABLE で足す。
-ADDED_COLUMNS = {
+BASELINE_ADDED_COLUMNS = {
     "writings": [
         ("stance", "TEXT NOT NULL DEFAULT ''"),
         ("template", "TEXT NOT NULL DEFAULT ''"),
@@ -31,7 +32,7 @@ ADDED_COLUMNS = {
     ],
 }
 
-SCHEMA_SQL = """
+BASELINE_SQL = """
 CREATE TABLE IF NOT EXISTS categories (
     name       TEXT PRIMARY KEY,
     sort_order INTEGER NOT NULL DEFAULT 100,
@@ -181,17 +182,147 @@ def get_connection(db_path: Path | None = None) -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
-def init_db(db_path: Path | None = None) -> None:
-    """テーブルが無ければ作成し、初期カテゴリを登録する(既存データはそのまま)。"""
+# ---------- 移行処理 ----------
+
+
+def _add_missing_columns(conn: sqlite3.Connection, table: str, columns: list[tuple[str, str]]) -> None:
+    """列が無ければ ALTER TABLE で追加する(既存の行は既定値になる)。2 回実行しても安全。"""
+    existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+    for name, definition in columns:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+
+
+def _baseline(conn: sqlite3.Connection) -> None:
+    """バージョン 6 までのテーブル構造にする(新しい DB でも、古い DB でも同じ結果になる)。"""
+    conn.executescript(BASELINE_SQL)
+    for table, columns in BASELINE_ADDED_COLUMNS.items():
+        _add_missing_columns(conn, table, columns)
+
+
+def _tables(conn: sqlite3.Connection) -> set[str]:
+    return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+
+
+def _v7_trash_and_examples(conn: sqlite3.Connection) -> None:
+    """ゴミ箱と、3 本目以降の例文。
+
+    - 語彙の本体を vocab_all に改名し、deleted_at(ゴミ箱に入れた日時)を追加する。
+      「vocab」はゴミ箱に入っていない語彙だけを見せるビューにするので、読み取り側の SQL は今までどおり使える。
+      書き込み(追加・更新・削除)は vocab_all に対して行う。
+      ※ ビューは SELECT * の列を作成時点で固定するので、vocab_all に列を足したらビューも作り直すこと
+    - 改名すると、他のテーブルからの参照(REFERENCES vocab)も SQLite が自動で vocab_all に書き換える
+    - 作文にも deleted_at を追加(ゴミ箱)
+    - 例文 3 本目以降を入れる vocab_examples テーブル(例文 1・2 は今までどおり vocab_all の列)
+    """
+    if "vocab_all" not in _tables(conn):
+        conn.execute("ALTER TABLE vocab RENAME TO vocab_all")
+    _add_missing_columns(conn, "vocab_all", [("deleted_at", "TEXT")])
+    conn.execute("DROP VIEW IF EXISTS vocab")
+    conn.execute("CREATE VIEW vocab AS SELECT * FROM vocab_all WHERE deleted_at IS NULL")
+    _add_missing_columns(conn, "writings", [("deleted_at", "TEXT")])
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS vocab_examples (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            vocab_id   INTEGER NOT NULL REFERENCES vocab_all(id) ON DELETE CASCADE,
+            sentence   TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_examples_vocab ON vocab_examples(vocab_id)")
+
+
+def _v8_fsrs(conn: sqlite3.Connection) -> None:
+    """復習の計算を FSRS に変更。カードの状態(JSON)と「簡単」の回数を保存する列を追加する。
+
+    以前の方式で学習済みの語彙は fsrs_card が空のまま残り、次に回答したときに
+    今の復習間隔を引き継いで FSRS のカードに変換される(scheduler.legacy_card)。
+    """
+    _add_missing_columns(conn, "review_state", [
+        ("easy_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("fsrs_card", "TEXT NOT NULL DEFAULT ''"),
+    ])
+
+
+def _v9_reading(conn: sqlite3.Connection) -> None:
+    """読解トレーニング:読んだ文章(要約つき)と、そこで出会った語(語彙ライブラリへの登録候補)。"""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS reading_notes (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            title      TEXT NOT NULL,
+            source     TEXT NOT NULL DEFAULT '',
+            body       TEXT NOT NULL,
+            summary    TEXT NOT NULL DEFAULT '',
+            feedback   TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+        );
+        -- 登録候補の語。文章から拾ったもの(note_id あり)と、言葉だけメモしたもの(note_id なし)
+        CREATE TABLE IF NOT EXISTS reading_candidates (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            note_id    INTEGER REFERENCES reading_notes(id) ON DELETE CASCADE,
+            word       TEXT NOT NULL,
+            sentence   TEXT NOT NULL DEFAULT '',
+            source     TEXT NOT NULL DEFAULT '',
+            status     TEXT NOT NULL DEFAULT 'pending',   -- pending / registered / ignored
+            vocab_id   INTEGER REFERENCES vocab_all(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_candidates_status ON reading_candidates(status);
+        """
+    )
+
+
+# (移行後のバージョン, 移行処理)。新しい変更はこのリストの最後に足す
+MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
+    (6, _baseline),
+    (7, _v7_trash_and_examples),
+    (8, _v8_fsrs),
+    (9, _v9_reading),
+]
+SCHEMA_VERSION = MIGRATIONS[-1][0]
+
+
+def schema_version(conn: sqlite3.Connection) -> int:
+    return conn.execute("PRAGMA user_version").fetchone()[0]
+
+
+def migrate(conn: sqlite3.Connection) -> list[int]:
+    """まだ適用していない移行処理を、古い順に実行する。適用したバージョンの一覧を返す。"""
+    applied = []
+    for version, step in MIGRATIONS:
+        if version > schema_version(conn):
+            step(conn)
+            conn.execute(f"PRAGMA user_version = {version}")
+            applied.append(version)
+    return applied
+
+
+def _needs_migration(path: Path) -> bool:
+    """データの入った DB で、まだ適用していない移行処理があるか。"""
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    with sqlite3.connect(path) as conn:
+        version = schema_version(conn)
+    conn.close()
+    return version < SCHEMA_VERSION
+
+
+def init_db(db_path: Path | None = None, auto_backup_before_migration: bool = True) -> None:
+    """テーブルを最新の構造にし、初期データを登録する(既存データはそのまま)。
+
+    データの入った DB を移行するときは、念のため先にバックアップを取る。
+    """
     path = Path(db_path or config.DB_PATH)
     path.parent.mkdir(parents=True, exist_ok=True)
+    if auto_backup_before_migration and _needs_migration(path):
+        backup.create_backup(f"before_v{SCHEMA_VERSION}", path)
     with get_connection(path) as conn:
-        conn.executescript(SCHEMA_SQL)
-        for table, columns in ADDED_COLUMNS.items():
-            existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
-            for name, definition in columns:
-                if name not in existing:  # 古い DB には列が無いので追加する(既存の行は既定値になる)
-                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+        migrate(conn)
         conn.executemany(
             "INSERT OR IGNORE INTO categories (name, sort_order) VALUES (?, ?)",
             [(name, i) for i, name in enumerate(DEFAULT_CATEGORIES)],
@@ -208,8 +339,3 @@ def init_db(db_path: Path | None = None) -> None:
             conn.execute(
                 "INSERT INTO app_settings (key, value) VALUES ('writing_prompts_seeded', '1')"
             )
-        current = conn.execute("PRAGMA user_version").fetchone()[0]
-        if current < SCHEMA_VERSION:
-            # 1〜4・6 は新しいテーブルの追加、5 は列の追加(上の ADDED_COLUMNS の処理)で完了。
-            # 既存の列を変えるような変更が必要になったら、ここに移行処理(ALTER TABLE など)を書く
-            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
