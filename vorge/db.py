@@ -17,7 +17,18 @@ from vorge.writing.prompts import DEFAULT_PROMPTS
 #   2: review_state, study_log(フラッシュカード・学習履歴)
 #   3: app_settings, writing_prompts, writings, writing_vocab(作文トレーニング)
 #   4: quiz_log(穴埋めクイズ)
-SCHEMA_VERSION = 4
+#   5: writings に stance / template / sections 列を追加(議論トレーニング)
+SCHEMA_VERSION = 5
+
+# 既存のテーブルに後から追加した列(テーブル名 → [(列名, 型と既定値)])。
+# CREATE TABLE IF NOT EXISTS は既存のテーブルを変更しないので、無ければ ALTER TABLE で足す。
+ADDED_COLUMNS = {
+    "writings": [
+        ("stance", "TEXT NOT NULL DEFAULT ''"),
+        ("template", "TEXT NOT NULL DEFAULT ''"),
+        ("sections", "TEXT NOT NULL DEFAULT ''"),
+    ],
+}
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS categories (
@@ -103,6 +114,10 @@ CREATE TABLE IF NOT EXISTS writings (
     body        TEXT NOT NULL,
     char_count  INTEGER NOT NULL,
     feedback    TEXT NOT NULL DEFAULT '',     -- 添削結果のメモ
+    -- 以下は議論トレーニング用(kind = 'debate' の行だけが使う)
+    stance      TEXT NOT NULL DEFAULT '',     -- 立場(pro / con)
+    template    TEXT NOT NULL DEFAULT '',     -- 構成の型(prep / rebuttal)
+    sections    TEXT NOT NULL DEFAULT '',     -- 欄ごとの文章(JSON)
     created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
@@ -162,6 +177,11 @@ def init_db(db_path: Path | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with get_connection(path) as conn:
         conn.executescript(SCHEMA_SQL)
+        for table, columns in ADDED_COLUMNS.items():
+            existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+            for name, definition in columns:
+                if name not in existing:  # 古い DB には列が無いので追加する(既存の行は既定値になる)
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
         conn.executemany(
             "INSERT OR IGNORE INTO categories (name, sort_order) VALUES (?, ?)",
             [(name, i) for i, name in enumerate(DEFAULT_CATEGORIES)],
@@ -180,6 +200,6 @@ def init_db(db_path: Path | None = None) -> None:
             )
         current = conn.execute("PRAGMA user_version").fetchone()[0]
         if current < SCHEMA_VERSION:
-            # 1 → 2 → 3 → 4 は新しいテーブルの追加だけなので、上の CREATE TABLE IF NOT EXISTS で完了。
+            # 1〜4 は新しいテーブルの追加、5 は列の追加(上の ADDED_COLUMNS の処理)で完了。
             # 既存の列を変えるような変更が必要になったら、ここに移行処理(ALTER TABLE など)を書く
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")

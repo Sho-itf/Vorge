@@ -33,6 +33,7 @@ pages = {
         st.Page("views/flashcard.py", title="フラッシュカード", icon=":material/style:"),
         st.Page("views/quiz.py", title="穴埋めクイズ", icon=":material/quiz:"),
         st.Page("views/writing.py", title="作文トレーニング", icon=":material/edit_note:"),
+        st.Page("views/debate.py", title="議論トレーニング", icon=":material/forum:"),
         st.Page("views/history.py", title="学習履歴", icon=":material/insights:"),
         st.Page("views/library.py", title="語彙ライブラリ", icon=":material/menu_book:"),
         st.Page("views/csv_io.py", title="CSV入出力", icon=":material/swap_vert:"),

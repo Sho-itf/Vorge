@@ -68,6 +68,22 @@ def flash_front(text: str, sub: str = "", label: str = "") -> None:
     )
 
 
+def vocab_mini_cards(vocabs: list[Vocab], used: dict[str, bool]) -> None:
+    """作文・議論で使う語彙を横並びの小さなカードで表示する(使えた語彙には ✅)。"""
+    if not vocabs:
+        st.info("使う語彙を選んでください。")
+        return
+    for col, v in zip(st.columns(len(vocabs)), vocabs):
+        mark = "✅" if used.get(v.word) else "⬜"
+        example = f'<div class="vg-list-ex">例:{escape(v.example_1)}</div>' if v.example_1 else ""
+        col.markdown(
+            '<div class="vg-card vg-wordcard">'
+            f'<div class="vg-list-word">{mark} {ruby_html(v.word, v.reading)}</div>'
+            f'<div class="vg-list-text">{escape(v.meaning)}</div>{example}</div>',
+            unsafe_allow_html=True,
+        )
+
+
 def vocab_card(v: Vocab, review: ReviewState | None = None, show_meta: bool = True) -> None:
     """語彙 1 件の詳細をカードとして表示する。空の項目は表示しない。
 

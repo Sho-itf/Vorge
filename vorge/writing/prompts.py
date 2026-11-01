@@ -35,6 +35,11 @@ VOCAB_MODE_LABELS = {
     VOCAB_MANUAL: "自分で選ぶ",
 }
 
+# 議論トレーニング用:論理・議論に関わるカテゴリの語彙を優先する
+VOCAB_LOGIC = "logic"
+LOGIC_CATEGORIES = ("論理・議論", "判断・論理")
+DEBATE_VOCAB_MODE_LABELS = {VOCAB_LOGIC: "論理・議論の語彙を優先", **VOCAB_MODE_LABELS}
+
 # ---------- お題の初期セット(各 20 個) ----------
 DEFAULT_PROMPTS = {
     KIND_DAILY: [
