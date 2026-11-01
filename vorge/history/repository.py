@@ -47,7 +47,7 @@ WITH q AS (
 ),
 s AS (
     SELECT v.id AS vocab_id, v.word, v.meaning,
-           COALESCE(r.correct_count, 0) AS fc, COALESCE(r.unsure_count, 0) AS fu,
+           COALESCE(r.correct_count + r.easy_count, 0) AS fc, COALESCE(r.unsure_count, 0) AS fu,
            COALESCE(r.wrong_count, 0) AS fw, COALESCE(q.qc, 0) AS qc, COALESCE(q.qw, 0) AS qw,
            r.last_result, r.next_review
     FROM vocab v
@@ -83,10 +83,10 @@ class HistoryRepository:
         with self._connect() as conn:
             row = conn.execute(
                 f"""
-                SELECT COUNT(*), SUM(result = ?) FROM study_log
+                SELECT COUNT(*), SUM(result IN (?, ?)) FROM study_log
                 WHERE {timeutil.sql_date('studied_at')} BETWEEN ? AND ?
                 """,
-                (scheduler.CORRECT, start.isoformat(), end.isoformat()),
+                (*scheduler.CORRECT_RESULTS, start.isoformat(), end.isoformat()),
             ).fetchone()
         total, correct = row[0], row[1] or 0
         return correct / total if total else None
@@ -124,7 +124,9 @@ class HistoryRepository:
             for i in range((end - start).days + 1)
         }
         for r in rows:
-            setattr(days[date.fromisoformat(r["d"])], r["result"], r["n"])
+            day = days[date.fromisoformat(r["d"])]
+            name = "correct" if r["result"] in scheduler.CORRECT_RESULTS else r["result"]  # 「簡単」は正解に含める
+            setattr(day, name, getattr(day, name) + r["n"])
         return list(days.values())
 
     def upcoming_reviews(self, today: date, days: int = 7) -> list[tuple[date, int]]:

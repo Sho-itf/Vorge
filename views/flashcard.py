@@ -5,14 +5,19 @@
 """
 
 
+from datetime import datetime
+from html import escape
+
 import pandas as pd
 import streamlit as st
 
 from vorge import timeutil
 from vorge.flashcard import scheduler, session
 from vorge.flashcard.repository import ReviewRepository
-from vorge.ui.components import flash_front, vocab_card
+from vorge.quiz.builder import blanks_for, matches_word
+from vorge.ui.components import flash_front, html, vocab_card
 from vorge.ui.persist import load_settings, save_setting
+from vorge.ui.shortcuts import keyboard_shortcuts
 from vorge.vocab.repository import VocabRepository
 
 vocab_repo = VocabRepository()
@@ -28,6 +33,7 @@ load_settings({
     "fc_setting_difficulty": DEFAULT_DIFFICULTY,
     "fc_setting_new_limit": 10,
     "fc_setting_shuffle": True,
+    "fc_setting_input": False,
 })
 if not (isinstance(ss.fc_setting_difficulty, (list, tuple)) and len(ss.fc_setting_difficulty) == 2):
     ss.fc_setting_difficulty = DEFAULT_DIFFICULTY
@@ -66,8 +72,16 @@ def show_settings() -> None:
             key="fc_setting_mode",
             on_change=save_setting,
             args=("fc_setting_mode",),
-            help="「語彙 → 意味」は語彙を見て意味を思い出します。「意味 → 語彙」はその逆です。",
+            help="「語彙 → 意味」は語彙を見て意味を思い出します。「意味 → 語彙」はその逆です。"
+            "「例文の穴埋め」は、例文の空欄に入る語彙を思い出します。",
         )
+        if mode != scheduler.MODE_WORD_TO_MEANING:
+            st.toggle(
+                "答えを入力してから確認する", key="fc_setting_input", on_change=save_setting,
+                args=("fc_setting_input",),
+                help="頭の中で思い出すだけでなく、実際に語彙を入力して答えます(読みのひらがなでも正解)。"
+                "自分の手で答えを出すほうが、記憶に残りやすくなります。",
+            )
         c1, c2 = st.columns(2)
         all_categories = vocab_repo.list_categories()
         # 保存したカテゴリが削除されている場合に備えて、今あるものだけに絞る
@@ -110,19 +124,89 @@ def show_settings() -> None:
             )
         if st.button("▶ 学習をはじめる", type="primary", disabled=total == 0):
             queue = review_repo.build_queue(today, int(new_limit), categories, difficulty, shuffle)
-            session.start(ss, queue, mode)
+            session.start(ss, queue, mode, input_answer=bool(ss.fc_setting_input))
             st.rerun()
 
     with st.expander("復習のタイミングのしくみ"):
         st.markdown(
-            "- **正解** → 次の復習までの間隔が約 2.5 倍に延びます(1日 → 3日 → 8日 → 20日 …)\n"
-            "- **自信がない** → 間隔はそのまま\n"
-            "- **不正解** → 翌日にもう一度出題されます\n\n"
+            "復習日は **FSRS** という方式で、語彙ごとに「思い出せる確率が 90% まで下がる頃」に決めます。\n\n"
+            "- **簡単** → 間隔が大きく延びます\n"
+            "- **正解** → 間隔が延びます(何度も正解している語彙ほど大きく延びる)\n"
+            "- **自信がない** → 少しだけ延びます\n"
+            "- **不正解** → すぐ(翌日〜数日後)にもう一度出題されます\n\n"
+            "各ボタンには、押したときの次回の復習までの日数が表示されます。"
             "間隔が 7 日以上で「定着中」、21 日以上で「習得」になります。"
         )
 
 
 # ============ 出題画面 ============
+ANSWER_BUTTONS = [  # (回答, アイコン, キーボード)
+    (scheduler.WRONG, "❌", "1"),
+    (scheduler.UNSURE, "🤔", "2"),
+    (scheduler.CORRECT, "✅", "3"),
+    (scheduler.EASY, "🌟", "4"),
+]
+
+
+def cloze_blank(vocab, pos: int):
+    """穴埋めモードで使う例文の空欄。例文が無ければ None(そのカードは「意味 → 語彙」で出す)。"""
+    blanks = blanks_for(vocab)
+    return blanks[pos % len(blanks)] if blanks else None
+
+
+def answers_with_word() -> bool:
+    """語彙を答える出題か(「意味 → 語彙」「例文の穴埋め」)。入力式はこのときだけ使える。"""
+    return ss.fc_mode in (scheduler.MODE_MEANING_TO_WORD, scheduler.MODE_CLOZE)
+
+
+def show_front(vocab, state, retry: bool, pos: int) -> None:
+    """問題面:答えを隠して、語彙・意味・例文の空欄のどれかを大きく表示する。"""
+    if retry:
+        kind = "🔂 もう一度(さっき間違えた語彙)"
+    else:
+        kind = "🆕 新しい語彙" if state is None else f"🔁 復習({state.mastery})"
+    blank = cloze_blank(vocab, pos) if ss.fc_mode == scheduler.MODE_CLOZE else None
+    if ss.fc_mode == scheduler.MODE_WORD_TO_MEANING:
+        flash_front(vocab.word, label=f"{kind} ・ この語彙の意味は?")
+    elif blank:
+        html(st, '<div class="vg-card vg-flash">'
+                 f'<p class="vg-label">{escape(kind)} ・ 空欄に入る語彙は?</p>'
+                 f'<p class="vg-flash-text vg-long">{escape(blank.before)}'
+                 '<span class="vg-blank">\u3000\u3000\u3000</span>'
+                 f'{escape(blank.after)}</p>'
+                 f'<p class="vg-reading">意味:{escape(vocab.meaning)}</p></div>')
+    else:
+        flash_front(vocab.meaning, sub=f"カテゴリ:{vocab.category}", label=f"{kind} ・ この意味の語彙は?")
+
+
+def check_typed(vocab, pos: int, typed: str) -> None:
+    blank = cloze_blank(vocab, pos)
+    ss.fc_typed = typed or "(わからない)"
+    ss.fc_typed_ok = bool(typed) and matches_word(typed, vocab.word, vocab.reading,
+                                                  [blank.answer] if blank else [])
+    ss.fc_revealed = True
+
+
+def answer(vocab, result: str, retry: bool) -> None:
+    if retry:
+        ss.fc_retry_results.append(result)
+    else:
+        new_state = review_repo.record_answer(vocab.id, result, ss.fc_mode)
+        ss.fc_results.append(
+            {
+                "語彙": vocab.word,
+                "結果": scheduler.RESULT_LABELS[result],
+                "次回復習": new_state.next_review,
+                "習得状況": new_state.mastery,
+            }
+        )
+        if result == scheduler.WRONG:
+            session.add_retry(ss, vocab.id)
+    ss.fc_pos += 1
+    ss.fc_revealed = False
+    ss.fc_typed = None
+
+
 def show_card() -> None:
     queue, pos = ss.fc_queue, ss.fc_pos
     vocab = vocab_repo.get(queue[pos])
@@ -136,55 +220,45 @@ def show_card() -> None:
     st.progress(pos / len(queue), text=f"{label}{pos + 1} / {len(queue)} 枚目")
 
     if not ss.fc_revealed:
-        # 問題面:答えを隠して、語彙(または意味)だけを大きく表示する
-        if retry:
-            kind = "🔂 もう一度(さっき間違えた語彙)"
+        show_front(vocab, state, retry, pos)
+        if ss.fc_input and answers_with_word():
+            with st.form(f"typed_{pos}", border=False):
+                typed = st.text_input("答え", placeholder="語彙を入力(読みのひらがなでもOK)")
+                c1, c2, _ = st.columns([1, 1, 2])
+                checked = c1.form_submit_button("答え合わせ", type="primary", width="stretch")
+                gave_up = c2.form_submit_button("わからない", width="stretch")
+            if checked or gave_up:
+                check_typed(vocab, pos, "" if gave_up else typed.strip())
+                st.rerun()
         else:
-            kind = "🆕 新しい語彙" if state is None else f"🔁 復習({state.mastery})"
-        if ss.fc_mode == scheduler.MODE_WORD_TO_MEANING:
-            flash_front(vocab.word, label=f"{kind} ・ この語彙の意味は?")
-        else:
-            flash_front(
-                vocab.meaning, sub=f"カテゴリ:{vocab.category}", label=f"{kind} ・ この意味の語彙は?"
-            )
-        if st.button("答えを見る", type="primary", width="stretch"):
-            ss.fc_revealed = True
-            st.rerun()
+            if st.button("答えを見る(Space)", type="primary", width="stretch"):
+                ss.fc_revealed = True
+                st.rerun()
+            keyboard_shortcuts({" ": "答えを見る", "Enter": "答えを見る"})
     else:
         # 答え面:スクロールせずに押せるよう、採点ボタンを詳細カードより上に置く
-        st.markdown("**思い出せましたか?**")
+        if ss.fc_typed is not None:
+            if ss.fc_typed_ok:
+                st.success(f"✅ 入力した答え「{ss.fc_typed}」は正解です。")
+            else:
+                st.error(f"❌ 入力した答え:{ss.fc_typed} / 正解:{vocab.word}")
+        st.markdown("**思い出せましたか?**(キーボードの 1〜4 でも選べます)")
         if retry:
             st.caption("この回答は記録しません(復習日は 1 回目の回答で決まっています)。")
-        current = state.interval_days if state else None
-        cols = st.columns(3)
-        buttons = [
-            (scheduler.CORRECT, "✅", "primary"),
-            (scheduler.UNSURE, "🤔", "secondary"),
-            (scheduler.WRONG, "❌", "secondary"),
-        ]
-        for col, (result, icon, btn_type) in zip(cols, buttons):
-            days = scheduler.next_interval(current, result)
-            label = f"{icon} {scheduler.RESULT_LABELS[result]}"
-            if not retry:
-                label += f"({scheduler.interval_text(days)})"
-            if col.button(label, key=f"answer_{result}_{pos}", type=btn_type, width="stretch"):
-                if retry:
-                    ss.fc_retry_results.append(result)
-                else:
-                    new_state = review_repo.record_answer(vocab.id, result, ss.fc_mode)
-                    ss.fc_results.append(
-                        {
-                            "語彙": vocab.word,
-                            "結果": scheduler.RESULT_LABELS[result],
-                            "次回復習": new_state.next_review,
-                            "習得状況": new_state.mastery,
-                        }
-                    )
-                    if result == scheduler.WRONG:
-                        session.add_retry(ss, vocab.id)
-                ss.fc_pos += 1
-                ss.fc_revealed = False
-                st.rerun()
+        days = {} if retry else scheduler.preview(
+            state.card() if state else scheduler.load_card(""), datetime.now()
+        )
+        # 入力式で間違えたときは「不正解」、それ以外は「正解」を目立たせる
+        suggested = scheduler.WRONG if ss.fc_typed is not None and not ss.fc_typed_ok else scheduler.CORRECT
+        cols = st.columns(len(ANSWER_BUTTONS))
+        for col, (result, icon, _key) in zip(cols, ANSWER_BUTTONS):
+            text = f"{icon} {scheduler.RESULT_LABELS[result]}"
+            if result in days:
+                text += f"({scheduler.interval_text(days[result])})"
+            col.button(text, key=f"answer_{result}_{pos}", width="stretch",
+                       type="primary" if result == suggested else "secondary",
+                       on_click=answer, args=(vocab, result, retry))
+        keyboard_shortcuts({key: f"{icon} {scheduler.RESULT_LABELS[result]}" for result, icon, key in ANSWER_BUTTONS})
         vocab_card(vocab, state, show_meta=False)
 
     st.write("")
@@ -201,17 +275,16 @@ def show_summary() -> None:
     else:
         st.subheader("🎉 おつかれさまでした!")
         counts = pd.Series([r["結果"] for r in results]).value_counts()
-        c1, c2, c3 = st.columns(3)
-        for col, result in zip((c1, c2, c3), scheduler.RESULTS):
+        for col, result in zip(st.columns(len(scheduler.RESULTS)), scheduler.RESULTS):
             label = scheduler.RESULT_LABELS[result]
             with col.container(border=True):
                 st.metric(label, f"{counts.get(label, 0)} 語")
         st.dataframe(pd.DataFrame(results), hide_index=True, width="stretch")
         retries = ss.fc_retry_results
         if retries:
-            ok = retries.count(scheduler.CORRECT)
+            ok = sum(r in scheduler.CORRECT_RESULTS for r in retries)
             st.caption(f"🔂 間違えた語彙のもう一度:{ok} / {len(retries)} 語を思い出せました。")
-        st.caption("不正解の語彙は明日また出題されます。")
+        st.caption("不正解の語彙は、近いうちにまた出題されます。")
 
     c1, c2, _ = st.columns([1, 1, 2])
     if c1.button("設定に戻る", type="primary", width="stretch"):

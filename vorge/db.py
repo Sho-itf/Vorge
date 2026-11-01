@@ -235,10 +235,23 @@ def _v7_trash_and_examples(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_examples_vocab ON vocab_examples(vocab_id)")
 
 
+def _v8_fsrs(conn: sqlite3.Connection) -> None:
+    """復習の計算を FSRS に変更。カードの状態(JSON)と「簡単」の回数を保存する列を追加する。
+
+    以前の方式で学習済みの語彙は fsrs_card が空のまま残り、次に回答したときに
+    今の復習間隔を引き継いで FSRS のカードに変換される(scheduler.legacy_card)。
+    """
+    _add_missing_columns(conn, "review_state", [
+        ("easy_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("fsrs_card", "TEXT NOT NULL DEFAULT ''"),
+    ])
+
+
 # (移行後のバージョン, 移行処理)。新しい変更はこのリストの最後に足す
 MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
     (6, _baseline),
     (7, _v7_trash_and_examples),
+    (8, _v8_fsrs),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 

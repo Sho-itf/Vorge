@@ -12,6 +12,7 @@ from vorge.quiz.builder import Question, is_correct_input
 from vorge.quiz.repository import FORMAT_CHOICE, FORMAT_LABELS, SCOPE_LABELS, QuizRepository
 from vorge.ui.components import html, ruby_html
 from vorge.ui.persist import load_settings, save_setting
+from vorge.ui.shortcuts import keyboard_shortcuts
 from vorge.vocab.repository import VocabRepository
 
 repo = QuizRepository()
@@ -166,9 +167,10 @@ def show_question() -> None:
         if ss.qz_format == FORMAT_CHOICE:
             vocabs = vocab_repo.get_many(q.choices)
             words = [vocabs[i].word for i in q.choices if i in vocabs]
+            keyboard_shortcuts({str(i + 1): f"{i + 1}. " for i in range(len(words))})
             cols = st.columns(2)
             for i, word in enumerate(words):
-                if cols[i % 2].button(word, key=f"choice_{pos}_{i}", width="stretch"):
+                if cols[i % 2].button(f"{i + 1}. {word}", key=f"choice_{pos}_{i}", width="stretch"):
                     answer(q, word, word == q.word)
                     st.rerun()
         else:
@@ -206,7 +208,9 @@ def show_question() -> None:
         else:
             st.caption("⚠️ この例文は今後出題しません(回答の記録も取り消しました)。")
         last = pos == len(questions) - 1
-        if st.button("結果を見る" if last else "次の問題へ →", type="primary", width="stretch"):
+        next_label = "結果を見る" if last else "次の問題へ →"
+        keyboard_shortcuts({"Enter": next_label, " ": next_label})
+        if st.button(next_label, type="primary", width="stretch"):
             ss.qz_pos += 1
             ss.qz_answer = None
             st.rerun()
