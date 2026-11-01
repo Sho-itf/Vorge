@@ -7,9 +7,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# 個人データ(DB)と秘密情報
-data/*.db
-data/*.db-journal
+# 個人データ(DB・バックアップ)と秘密情報
+data/
 .env
 
 # エディタ・OS
