@@ -129,6 +129,8 @@ mark.vg-known { background: rgba(245, 158, 11, 0.28); color: inherit; padding: 0
 /* ---------- スマホなど幅の狭い画面(640px 以下) ---------- */
 @media (max-width: 640px) {
     .block-container { padding: 1.2rem 0.8rem 3rem; }
+    .stApp h1 { font-size: 1.9rem; }
+    .stApp h3 { font-size: 1.25rem; }
     div.vg-card { padding: 1rem 1.1rem; }
     div.vg-card p.vg-word { font-size: 1.6rem; }
     div.vg-card p.vg-flash-text { font-size: 2rem; }
