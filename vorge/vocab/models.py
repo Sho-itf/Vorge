@@ -4,8 +4,9 @@
 ルールを変えたいときはこのファイルだけ直せばよい。
 """
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields, replace
-from typing import Any, Mapping
+from typing import Any
 
 UNCATEGORIZED = "未分類"
 

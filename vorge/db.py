@@ -4,9 +4,9 @@
 """
 
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
 
 from vorge import config
 from vorge.vocab.models import DEFAULT_CATEGORIES

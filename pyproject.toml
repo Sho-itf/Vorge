@@ -2,3 +2,21 @@
 # tests/ から "import vorge" できるようにする
 pythonpath = ["."]
 testpaths = ["tests"]
+
+# コードの自動チェック(ruff check .)の設定
+[tool.ruff]
+line-length = 120  # 日本語のメッセージ文が長くなりやすいので少し広め
+target-version = "py313"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+# E/W: 書き方の基本 F: 使っていない import・変数など I: import の並び順 B: よくあるバグ UP: 新しい書き方
+select = ["E", "W", "F", "I", "B", "UP"]
+ignore = [
+    "E731",  # lambda の代入(短い変換関数で使っている)
+    "B008",  # 関数の既定値での関数呼び出し
+    "B905",  # zip() の strict 指定(列と値の数が必ずそろう箇所でしか使っていない)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["vorge"]

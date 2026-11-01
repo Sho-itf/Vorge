@@ -9,7 +9,7 @@ from html import escape
 import streamlit as st
 
 from vorge.quiz.builder import Question, is_correct_input
-from vorge.quiz.repository import FORMAT_CHOICE, FORMAT_INPUT, FORMAT_LABELS, SCOPE_LABELS, QuizRepository
+from vorge.quiz.repository import FORMAT_CHOICE, FORMAT_LABELS, SCOPE_LABELS, QuizRepository
 from vorge.ui.components import html, ruby_html
 from vorge.ui.persist import load_settings, save_setting
 from vorge.vocab.repository import VocabRepository
