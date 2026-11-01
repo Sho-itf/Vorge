@@ -1,5 +1,6 @@
 """作文トレーニングの DB 操作(お題・作文の保存)と、使う語彙の選択。"""
 
+import json
 import random
 from dataclasses import dataclass
 from datetime import date
@@ -38,7 +39,14 @@ class Writing:
     feedback: str
     created_at: str
     updated_at: str
+    stance: str  # 以下 3 つは議論トレーニング(kind = "debate")の行だけが使う
+    template: str
+    sections: str  # 欄ごとの文章(JSON)
     words: list[WritingWord]
+
+    @property
+    def section_texts(self) -> dict[str, str]:
+        return json.loads(self.sections) if self.sections else {}
 
 
 class WritingRepository:
@@ -126,6 +134,41 @@ class WritingRepository:
             )
         return writing_id
 
+    def save_debate(
+        self,
+        prompt_id: int | None,
+        prompt_text: str,
+        stance: str,
+        template: str,
+        sections: dict[str, str],
+        body: str,
+        char_count: int,
+        min_chars: int,
+        max_chars: int,
+        words: list[WritingWord],
+    ) -> int:
+        """議論を保存する。作文と同じ writings テーブルに kind = "debate" で入れる。
+
+        body には欄をつなげた 1 つの文章、sections には欄ごとの文章(JSON)を保存する。
+        自由入力のお題は prompt_id が None になる。
+        """
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO writings (prompt_id, prompt_text, kind, min_chars, max_chars, body,
+                                      char_count, stance, template, sections)
+                VALUES (?, ?, 'debate', ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (prompt_id, prompt_text, min_chars, max_chars, body, char_count, stance, template,
+                 json.dumps(sections, ensure_ascii=False)),
+            )
+            writing_id = cur.lastrowid
+            conn.executemany(
+                "INSERT INTO writing_vocab (writing_id, vocab_id, word, used) VALUES (?, ?, ?, ?)",
+                [(writing_id, w.vocab_id, w.word, int(w.used)) for w in words],
+            )
+        return writing_id
+
     def update_feedback(self, writing_id: int, feedback: str) -> None:
         with self._connect() as conn:
             conn.execute(
@@ -201,7 +244,14 @@ class WritingRepository:
     # ---------- 使う語彙の選択 ----------
 
     def candidate_ids(self, mode: str) -> list[int]:
-        """語彙の選び方ごとの候補(苦手 / 学習中 / 未学習 / それ以外は全語彙)。"""
+        """語彙の選び方ごとの候補(論理系カテゴリ / 苦手 / 学習中 / 未学習 / それ以外は全語彙)。"""
+        if mode == P.VOCAB_LOGIC:
+            placeholders = ",".join("?" * len(P.LOGIC_CATEGORIES))
+            with self._connect() as conn:
+                rows = conn.execute(
+                    f"SELECT id FROM vocab WHERE category IN ({placeholders})", P.LOGIC_CATEGORIES
+                ).fetchall()
+            return [r[0] for r in rows]
         return ReviewRepository(self.db_path).ids_in_group(mode)
 
     def pick_vocab(self, mode: str, count: int, exclude: set[int] = frozenset()) -> list[int]:

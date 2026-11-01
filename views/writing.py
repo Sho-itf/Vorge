@@ -11,8 +11,10 @@ from html import escape
 
 import streamlit as st
 
+from vorge.debate import checker as debate_checker
+from vorge.debate.templates import KIND_DEBATE, STANCE_LABELS, TEMPLATES
 from vorge.settings import get_setting, set_setting
-from vorge.ui.components import ruby_html, set_flash
+from vorge.ui.components import set_flash, vocab_mini_cards
 from vorge.vocab.repository import VocabRepository
 from vorge.writing import checker
 from vorge.writing import prompts as P
@@ -177,21 +179,6 @@ def show_manual_picker(task: dict) -> None:
     task["vocab_ids"] = selected
 
 
-def show_vocab_cards(vocabs: list, used: dict[str, bool]) -> None:
-    if not vocabs:
-        st.info("使う語彙を選んでください。")
-        return
-    for col, v in zip(st.columns(len(vocabs)), vocabs):
-        mark = "✅" if used.get(v.word) else "⬜"
-        example = f'<div class="vg-list-ex">例:{escape(v.example_1)}</div>' if v.example_1 else ""
-        html(
-            col,
-            '<div class="vg-card vg-wordcard">'
-            f'<div class="vg-list-word">{mark} {ruby_html(v.word, v.reading)}</div>'
-            f'<div class="vg-list-text">{escape(v.meaning)}</div>{example}</div>',
-        )
-
-
 def show_check(result: checker.CheckResult, task: dict, n_vocab: int) -> None:
     used = sum(result.vocab_used.values())
     status = {"short": "あと少し", "ok": "目安どおり", "long": "長め"}[result.length_status]
@@ -268,7 +255,7 @@ def show_write_tab() -> None:
 
     body = ss.wr_draft
     result = checker.check(body, [(v.word, v.reading) for v in vocabs], task["min"], task["max"])
-    show_vocab_cards(vocabs, result.vocab_used)
+    vocab_mini_cards(vocabs, result.vocab_used)
 
     if ss.wr_saved_id:
         html(st, f'<div class="vg-essay">{escape(body)}</div>')
@@ -295,6 +282,26 @@ def show_write_tab() -> None:
 
 
 # ============ 📚 これまでの作文 ============
+# 一覧の「種類」:作文のお題の種類 + 議論トレーニングで保存したもの
+HISTORY_KIND_LABELS = {**P.KIND_LABELS, KIND_DEBATE: "議論"}
+
+
+def show_writing_body(w) -> None:
+    """保存した作文・議論の本文。議論は欄ごとに見出しを付けて表示する。"""
+    if w.kind == KIND_DEBATE and w.template in TEMPLATES:
+        template = TEMPLATES[w.template]
+        html(st, f'<span class="vg-badge">議論 ・ {escape(template.label)}</span>'
+                 f'<span class="vg-badge vg-badge-sub">{STANCE_LABELS.get(w.stance, w.stance)}</span>')
+        texts = w.section_texts
+        for s in template.sections:
+            html(st, f'<p class="vg-label">{escape(s.label)}</p>'
+                     f'<div class="vg-essay">{escape(texts.get(s.key, ""))}</div>')
+        return
+    html(st, f'<span class="vg-badge">{escape(HISTORY_KIND_LABELS.get(w.kind, w.kind))}</span>'
+             f'<span class="vg-badge vg-badge-sub">目安 {w.min_chars}〜{w.max_chars}字</span>')
+    html(st, f'<div class="vg-essay">{escape(w.body)}</div>')
+
+
 def show_history_tab() -> None:
     if repo.count_writings() == 0:
         st.info("まだ保存した作文はありません。「✍️ 書く」タブから書いてみましょう。")
@@ -307,8 +314,8 @@ def show_history_tab() -> None:
         format_func=lambda i: "すべて" if i is None else dict(words)[i],
     )
     kind_filter = c2.selectbox(
-        "お題の種類", [None, *P.KIND_LABELS],
-        format_func=lambda k: "すべて" if k is None else P.KIND_LABELS[k],
+        "種類", [None, *HISTORY_KIND_LABELS],
+        format_func=lambda k: "すべて" if k is None else HISTORY_KIND_LABELS[k],
     )
     writings = repo.list_writings(vocab_filter, kind_filter)
     c3.metric("件数", f"{len(writings)} 件")
@@ -317,9 +324,7 @@ def show_history_tab() -> None:
         marks = " ".join(f"{'✅' if x.used else '⬜'}{x.word}" for x in w.words)
         title = f"{w.created_at[:10]} ・ {w.prompt_text} ・ {w.char_count}字 ・ {marks}"
         with st.expander(title):
-            html(st, f'<span class="vg-badge">{escape(P.KIND_LABELS.get(w.kind, w.kind))}</span>'
-                     f'<span class="vg-badge vg-badge-sub">目安 {w.min_chars}〜{w.max_chars}字</span>')
-            html(st, f'<div class="vg-essay">{escape(w.body)}</div>')
+            show_writing_body(w)
 
             with st.form(f"fb_{w.id}"):
                 feedback = st.text_area("添削結果のメモ", value=w.feedback, height=120)
@@ -333,9 +338,13 @@ def show_history_tab() -> None:
                 vocab_map = vocab_repo.get_many([x.vocab_id for x in w.words])
                 pairs = [(x.word, vocab_map[x.vocab_id].meaning if x.vocab_id in vocab_map else "")
                          for x in w.words]
-                st.code(checker.build_review_prompt(w.prompt_text, pairs, w.body,
-                                                    w.min_chars, w.max_chars),
-                        language=None, wrap_lines=True)
+                if w.kind == KIND_DEBATE:
+                    review = debate_checker.build_review_prompt(
+                        w.prompt_text, w.stance, TEMPLATES[w.template], pairs, w.section_texts)
+                else:
+                    review = checker.build_review_prompt(w.prompt_text, pairs, w.body,
+                                                         w.min_chars, w.max_chars)
+                st.code(review, language=None, wrap_lines=True)
             with c2.popover("🗑️ 削除"):
                 st.write("この作文を削除します。取り消せません。")
                 if st.button("削除する", key=f"del_{w.id}", type="primary"):
@@ -409,7 +418,7 @@ def show_prompts_tab() -> None:
 # ============ 画面 ============
 st.title("作文トレーニング")
 st.caption("覚えた語彙を、実際に文章の中で使ってみましょう。")
-tab_write, tab_history, tab_prompts = st.tabs(["✍️ 書く", "📚 これまでの作文", "🗂 お題の管理"])
+tab_write, tab_history, tab_prompts = st.tabs(["✍️ 書く", "📚 これまでの作文・議論", "🗂 お題の管理"])
 with tab_write:
     show_write_tab()
 with tab_history:

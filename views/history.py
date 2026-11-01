@@ -87,9 +87,10 @@ with c4.container(border=True):
     st.metric("総回答数", f"{repo.total_answers()} 回")
 with c5.container(border=True):
     st.metric(
-        "作文",
+        "作文・議論",
         f"{writing_repo.count_writings()} 本",
-        help=f"作文トレーニングで保存した作文の数(書いた日数:{writing_repo.count_writing_days()} 日)",
+        help="作文トレーニング・議論トレーニングで保存した数"
+        f"(書いた日数:{writing_repo.count_writing_days()} 日)",
     )
 
 # ---------- 日ごとの回答数 ----------
