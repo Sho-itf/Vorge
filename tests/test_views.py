@@ -233,3 +233,14 @@ def test_home_daily_menu_starts_flashcard(app):
     click(app, "続きから")
     assert app.session_state["fc_label"] == "今日の学習"
     assert len(app.session_state["fc_queue"]) == len(WORDS)  # 目標 10 語 > 登録 6 語なので全部
+
+
+def test_reading_flow(app):
+    open_page(app, "views/reading.py")
+    app.text_area[0].input("物事を俯瞰して捉える。杞憂に終わる懸念もある。")
+    click(app, "保存して読む")
+    assert any("vg-known" in m.value for m in app.markdown)  # 登録済みの「俯瞰」に印
+    app.multiselect[0].select("杞憂")
+    click(app, "登録候補に追加")
+    open_page(app, "views/reading.py")
+    assert any("杞憂" in e.label for e in app.expander)
