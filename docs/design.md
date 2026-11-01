@@ -202,3 +202,40 @@ vorge/ai/          … AI添削(APIキーは .env から読む)
 - `quiz_excluded`:「この問題はおかしい」と報告した (語彙, 例文)。出題時に除外し、報告時はその回答記録を削除
 - 範囲スライダーはウィジェット用のキーと設定用のキーを分ける(value を明示しないと 1 つの値のスライダーになるため)
 - 画面テスト:`tests/test_views.py`(AppTest で全ページの表示と主要な操作、設定・下書きの記憶を確認)
+
+## 10. 第 8 段階:学習の質と土台の強化(スキーマバージョン 9)
+
+### 開発の土台
+- `requirements.txt` はバージョン固定、開発用は `requirements-dev.txt`。`ruff` でコードチェック
+- GitHub Actions(`.github/workflows/test.yml`)が push・プルリクエスト時に ruff と pytest を実行
+- `.gitattributes` で改行コードを LF に統一
+- DB の移行は `db.MIGRATIONS`(バージョン, 移行処理)の一覧。v6 までは `_baseline` にまとめ、以降 1 バージョンずつ追加。
+  データの入った DB を移行する前に `backups/before_vN_…db` を自動で作る
+
+### 移行の一覧
+| バージョン | 内容 |
+|---|---|
+| 7 | 語彙を `vocab_all` に改名し `deleted_at`(ゴミ箱)を追加、`vocab` はゴミ箱以外を見せるビュー。作文にも `deleted_at`。3 本目以降の例文 `vocab_examples` |
+| 8 | `review_state` に `fsrs_card`(FSRS のカード JSON)と `easy_count` |
+| 9 | 読解:`reading_notes`(文章・要約)、`reading_candidates`(登録候補の語) |
+
+- 書き込み(追加・更新・削除)は `vocab_all`、読み取りは原則 `vocab` ビュー。ビューは `SELECT *` の列が作成時に固定されるので、
+  `vocab_all` に列を足したらビューも作り直すこと
+
+### 学習
+- 復習の計算は FSRS(`flashcard/scheduler.py`)。分単位のステップは使わず日単位。回答は 不正解=Again / 自信がない=Hard /
+  正解=Good / 簡単=Easy。以前の方式の記録は、次の回答時に今の間隔を安定度として引き継いで変換(`legacy_card`)
+- 「今日」は `timeutil` の区切り時刻(初期値 4 時)で数える。SQL では `timeutil.sql_date(列名)` を使う
+- 今日の学習メニュー:`vorge/daily.py`(目標は app_settings の `daily_new` / `daily_quiz` / `daily_writing`)
+- 関連語(`vocab/relations.py`):類義語・対義語の文字列と登録済みの語を表示のたびに照合。
+  詳細ではクエリパラメータ `?vocab=ID` のリンクで語彙ライブラリの詳細を開く
+
+### 画面
+- キーボード操作(`ui/shortcuts.py`):小さな JavaScript でキーとボタンの表示文字を対応させてクリックする
+- スマホ:`theme.py` の `@media (max-width: 640px)` で一覧の折り返し・文字サイズ・ボタンの大きさを調整
+- バックアップ・ゴミ箱は「データ管理」画面のタブ(`ui/backup_panel.py`、`ui/trash_panel.py`)
+
+### 読解(`vorge/reading/`)
+- 未登録語の候補は「漢字 2 字以上・カタカナ 4 字以上」から、登録済み・よく使う言葉(`COMMON_WORDS`)を除いたもの。
+  辞書を使わない目安なので、画面で自分で選ぶ
+- 登録済み語彙の印は 1 回の正規表現の置き換えで付ける(1 語ずつ置き換えると、意味の文字の中まで置き換えてしまうため)

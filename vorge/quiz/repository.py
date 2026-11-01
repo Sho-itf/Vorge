@@ -5,9 +5,11 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
+from vorge import timeutil
 from vorge.db import get_connection
 from vorge.flashcard.repository import ReviewRepository
 from vorge.quiz.builder import Question, blanks_for, make_question, pick_distractors
+from vorge.vocab.relations import synonym_ids, word_index
 from vorge.vocab.repository import VocabRepository
 
 FORMAT_CHOICE = "choice"
@@ -48,12 +50,20 @@ class QuizRepository:
         scope: str = "all",
         categories: list[str] | None = None,
         difficulty_range: tuple[int, int] = (1, 5),
+        contrast: bool = False,
     ) -> list:
-        """出題できる語彙(条件に合い、除外していない例文の中にその語彙が含まれているもの)。"""
+        """出題できる語彙(条件に合い、除外していない例文の中にその語彙が含まれているもの)。
+
+        contrast=True(使い分けモード)では、登録済みの類義語がある語彙だけにする。
+        """
         vocabs = self.vocab_repo.search(categories=categories, difficulty_range=difficulty_range)
         if scope != "all":
             in_scope = set(self.review_repo.ids_in_group(scope))
             vocabs = [v for v in vocabs if v.id in in_scope]
+        if contrast:
+            all_vocab = self.vocab_repo.list_all()
+            index = word_index(all_vocab)
+            vocabs = [v for v in vocabs if synonym_ids(v, all_vocab, index)]
         excluded = self.excluded_map()
         return [v for v in vocabs if blanks_for(v, excluded.get(v.id, set()))]
 
@@ -64,6 +74,7 @@ class QuizRepository:
         categories: list[str] | None = None,
         difficulty_range: tuple[int, int] = (1, 5),
         only_ids: list[int] | None = None,
+        contrast: bool = False,
     ) -> list[Question]:
         """問題を count 問作る。only_ids を渡すとその語彙だけで作る(間違えた語彙の復習用)。
 
@@ -74,12 +85,12 @@ class QuizRepository:
             pool = [v for v in self.vocab_repo.get_many(only_ids).values()
                     if blanks_for(v, excluded.get(v.id, set()))]
         else:
-            pool = self.eligible_vocab(scope, categories, difficulty_range)
+            pool = self.eligible_vocab(scope, categories, difficulty_range, contrast)
         random.shuffle(pool)
         all_vocab = self.vocab_repo.list_all()
         return [
             make_question(v, random.choice(blanks_for(v, excluded.get(v.id, set()))),
-                          pick_distractors(v, all_vocab))
+                          pick_distractors(v, all_vocab, contrast=contrast))
             for v in pool[:count]
         ]
 
@@ -147,11 +158,18 @@ class QuizRepository:
         with self._connect() as conn:
             return conn.execute("SELECT COUNT(*) FROM quiz_log").fetchone()[0]
 
+    def count_answers_on(self, day: date) -> int:
+        with self._connect() as conn:
+            return conn.execute(
+                f"SELECT COUNT(*) FROM quiz_log WHERE {timeutil.sql_date('answered_at')} = ?",
+                (day.isoformat(),),
+            ).fetchone()[0]
+
     def accuracy_between(self, start: date, end: date) -> float | None:
         with self._connect() as conn:
             total, correct = conn.execute(
                 "SELECT COUNT(*), SUM(correct) FROM quiz_log "
-                "WHERE date(answered_at) BETWEEN ? AND ?",
+                f"WHERE {timeutil.sql_date('answered_at')} BETWEEN ? AND ?",
                 (start.isoformat(), end.isoformat()),
             ).fetchone()
         return (correct or 0) / total if total else None

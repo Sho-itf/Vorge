@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from vorge import timeutil
 from vorge.db import get_connection
 from vorge.vocab.models import CSV_COLUMNS, UNCATEGORIZED, Vocab
 
@@ -61,10 +62,12 @@ class VocabRepository:
 
     # ---------- 1 件ずつの操作 ----------
 
-    def get(self, vocab_id: int) -> Vocab | None:
+    def get(self, vocab_id: int, include_trash: bool = False) -> Vocab | None:
+        table = "vocab_all" if include_trash else "vocab"
         with self._connect() as conn:
-            row = conn.execute("SELECT * FROM vocab WHERE id = ?", (vocab_id,)).fetchone()
-        return Vocab.from_row(row) if row else None
+            row = conn.execute(f"SELECT * FROM {table} WHERE id = ?", (vocab_id,)).fetchone()
+            vocabs = self._with_examples(conn, [Vocab.from_row(row)]) if row else []
+        return vocabs[0] if vocabs else None
 
     def add(self, vocab: Vocab) -> int:
         """語彙を追加し、採番された id を返す。vocab.id が指定されていればその id で登録。"""
@@ -79,9 +82,36 @@ class VocabRepository:
             return self._update(conn, vocab.normalized())
 
     def delete(self, vocab_id: int) -> bool:
+        """ゴミ箱に移す(学習記録はそのまま残り、元に戻せる)。"""
         with self._connect() as conn:
-            cur = conn.execute("DELETE FROM vocab WHERE id = ?", (vocab_id,))
+            cur = conn.execute(
+                "UPDATE vocab_all SET deleted_at = datetime('now', 'localtime') "
+                "WHERE id = ? AND deleted_at IS NULL",
+                (vocab_id,),
+            )
             return cur.rowcount > 0
+
+    # ---------- ゴミ箱 ----------
+
+    def list_trash(self) -> list[Vocab]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM vocab_all WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC"
+            ).fetchall()
+        return [Vocab.from_row(r) for r in rows]
+
+    def restore(self, vocab_id: int) -> None:
+        with self._connect() as conn:
+            conn.execute("UPDATE vocab_all SET deleted_at = NULL WHERE id = ?", (vocab_id,))
+
+    def purge(self, vocab_id: int) -> None:
+        """ゴミ箱の語彙を完全に削除する。学習記録・例文なども一緒に消える(取り消せない)。"""
+        with self._connect() as conn:
+            conn.execute("DELETE FROM vocab_all WHERE id = ? AND deleted_at IS NOT NULL", (vocab_id,))
+
+    def empty_trash(self) -> int:
+        with self._connect() as conn:
+            return conn.execute("DELETE FROM vocab_all WHERE deleted_at IS NOT NULL").rowcount
 
     # ---------- 検索・集計 ----------
 
@@ -114,7 +144,7 @@ class VocabRepository:
         sql = f"SELECT * FROM vocab WHERE {' AND '.join(where)} ORDER BY {order}"
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
-        return [Vocab.from_row(r) for r in rows]
+            return self._with_examples(conn, [Vocab.from_row(r) for r in rows])
 
     def list_all(self) -> list[Vocab]:
         return self.search()
@@ -127,7 +157,7 @@ class VocabRepository:
         """指定日に登録された語彙の数。"""
         with self._connect() as conn:
             return conn.execute(
-                "SELECT COUNT(*) FROM vocab WHERE date(created_at) = ?",
+                f"SELECT COUNT(*) FROM vocab WHERE {timeutil.sql_date('created_at')} = ?",
                 (day.isoformat(),),
             ).fetchone()[0]
 
@@ -136,10 +166,10 @@ class VocabRepository:
             rows = conn.execute(
                 "SELECT * FROM vocab ORDER BY created_at DESC, id DESC LIMIT ?", (limit,)
             ).fetchall()
-        return [Vocab.from_row(r) for r in rows]
+            return self._with_examples(conn, [Vocab.from_row(r) for r in rows])
 
     def existing_ids(self, ids: list[int]) -> set[int]:
-        """指定した id のうち、DB に既に存在するものを返す。"""
+        """指定した id のうち、DB に既に存在するものを返す(ゴミ箱の中も含む。ID は重複できないため)。"""
         if not ids:
             return set()
         found: set[int] = set()
@@ -149,7 +179,7 @@ class VocabRepository:
                 chunk = ids[i : i + 500]
                 placeholders = ",".join("?" * len(chunk))
                 rows = conn.execute(
-                    f"SELECT id FROM vocab WHERE id IN ({placeholders})", chunk
+                    f"SELECT id FROM vocab_all WHERE id IN ({placeholders})", chunk
                 ).fetchall()
                 found.update(r["id"] for r in rows)
         return found
@@ -160,17 +190,19 @@ class VocabRepository:
             rows = conn.execute("SELECT id, word, meaning FROM vocab").fetchall()
         return [(r["id"], r["word"], r["meaning"]) for r in rows]
 
-    def get_many(self, ids: list[int]) -> dict[int, Vocab]:
-        """id → Vocab の辞書を返す(存在しない id は含まれない)。"""
+    def get_many(self, ids: list[int], include_trash: bool = False) -> dict[int, Vocab]:
+        """id → Vocab の辞書を返す(存在しない id、ゴミ箱の語彙は含まれない)。"""
+        table = "vocab_all" if include_trash else "vocab"
         result: dict[int, Vocab] = {}
         with self._connect() as conn:
             for i in range(0, len(ids), 500):
                 chunk = ids[i : i + 500]
                 placeholders = ",".join("?" * len(chunk))
                 rows = conn.execute(
-                    f"SELECT * FROM vocab WHERE id IN ({placeholders})", chunk
+                    f"SELECT * FROM {table} WHERE id IN ({placeholders})", chunk
                 ).fetchall()
-                result.update({r["id"]: Vocab.from_row(r) for r in rows})
+                for v in self._with_examples(conn, [Vocab.from_row(r) for r in rows]):
+                    result[v.id] = v
         return result
 
     # ---------- カテゴリ ----------
@@ -220,7 +252,7 @@ class VocabRepository:
             for vocab in vocabs:
                 vocab = vocab.normalized()
                 exists = vocab.id is not None and conn.execute(
-                    "SELECT 1 FROM vocab WHERE id = ?", (vocab.id,)
+                    "SELECT 1 FROM vocab_all WHERE id = ?", (vocab.id,)
                 ).fetchone()
                 if not exists:
                     self._insert(conn, vocab)
@@ -247,8 +279,9 @@ class VocabRepository:
             values.insert(0, vocab.id)
         placeholders = ",".join("?" * len(columns))
         cur = conn.execute(
-            f"INSERT INTO vocab ({','.join(columns)}) VALUES ({placeholders})", values
+            f"INSERT INTO vocab_all ({','.join(columns)}) VALUES ({placeholders})", values
         )
+        self._save_examples(conn, cur.lastrowid, vocab.extra_examples)
         return cur.lastrowid
 
     def _update(self, conn: sqlite3.Connection, vocab: Vocab) -> bool:
@@ -256,8 +289,30 @@ class VocabRepository:
         assignments = ", ".join(f"{c} = ?" for c in _EDITABLE)
         values = [getattr(vocab, c) for c in _EDITABLE]
         cur = conn.execute(
-            f"UPDATE vocab SET {assignments}, updated_at = datetime('now', 'localtime') "
+            f"UPDATE vocab_all SET {assignments}, updated_at = datetime('now', 'localtime') "
             "WHERE id = ?",
             [*values, vocab.id],
         )
+        self._save_examples(conn, vocab.id, vocab.extra_examples)
         return cur.rowcount > 0
+
+    @staticmethod
+    def _save_examples(conn: sqlite3.Connection, vocab_id: int, examples: list[str] | None) -> None:
+        """3 本目以降の例文を置き換える。None なら何もしない(CSV の上書き取り込みなど)。"""
+        if examples is None:
+            return
+        conn.execute("DELETE FROM vocab_examples WHERE vocab_id = ?", (vocab_id,))
+        conn.executemany(
+            "INSERT INTO vocab_examples (vocab_id, sentence, sort_order) VALUES (?, ?, ?)",
+            [(vocab_id, s, i) for i, s in enumerate(examples)],
+        )
+
+    @staticmethod
+    def _with_examples(conn: sqlite3.Connection, vocabs: list[Vocab]) -> list[Vocab]:
+        """語彙に 3 本目以降の例文を読み込む。"""
+        extras: dict[int, list[str]] = {}
+        for row in conn.execute("SELECT vocab_id, sentence FROM vocab_examples ORDER BY sort_order, id"):
+            extras.setdefault(row["vocab_id"], []).append(row["sentence"])
+        for v in vocabs:
+            v.extra_examples = extras.get(v.id, [])
+        return vocabs

@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
+from fsrs import Card
+
+from vorge import timeutil
 from vorge.db import get_connection
 from vorge.flashcard import scheduler
 from vorge.history.repository import HistoryRepository
@@ -21,10 +24,23 @@ class ReviewState:
     wrong_count: int
     last_result: str
     last_studied_at: str
+    easy_count: int = 0
+    fsrs_card: str = ""  # FSRS のカード(JSON)。以前の方式で学習した語彙は空
 
     @property
     def mastery(self) -> str:
         return scheduler.mastery_label(self.interval_days)
+
+    @property
+    def total_correct(self) -> int:
+        """「正解」と「簡単」の合計。"""
+        return self.correct_count + self.easy_count
+
+    def card(self) -> Card:
+        """FSRS のカード。以前の方式で学習した語彙は、今の間隔を引き継いで変換する。"""
+        if self.fsrs_card:
+            return scheduler.load_card(self.fsrs_card)
+        return scheduler.legacy_card(self.interval_days, self.next_review, self.last_studied_at)
 
 
 def _filter_sql(
@@ -62,10 +78,12 @@ class ReviewRepository:
         """
         now = now or datetime.now()
         current = self.get_state(vocab_id)
-        # next_interval は不明な result で ValueError を出すので、
-        # 下の SQL に埋め込む {result}_count は必ず 3 種類の列名のどれかになる
-        interval = scheduler.next_interval(current.interval_days if current else None, result)
-        next_review = scheduler.next_review_date(now.date(), interval).isoformat()
+        # scheduler.review は不明な result で ValueError を出すので、
+        # 下の SQL に埋め込む {result}_count は必ず 4 種類の列名のどれかになる
+        card, due_day, interval = scheduler.review(
+            current.card() if current else scheduler.load_card(""), result, now
+        )
+        next_review = due_day.isoformat()
         studied_at = now.strftime("%Y-%m-%d %H:%M:%S")
 
         with self._connect() as conn:
@@ -82,16 +100,17 @@ class ReviewRepository:
             conn.execute(
                 f"""
                 INSERT INTO review_state (
-                    vocab_id, interval_days, next_review, review_count,
-                    correct_count, unsure_count, wrong_count, last_result, last_studied_at
-                ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)
+                    vocab_id, interval_days, next_review, review_count, correct_count,
+                    unsure_count, wrong_count, easy_count, last_result, last_studied_at, fsrs_card
+                ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(vocab_id) DO UPDATE SET
                     interval_days   = excluded.interval_days,
                     next_review     = excluded.next_review,
                     review_count    = review_count + 1,
                     {result}_count  = {result}_count + 1,
                     last_result     = excluded.last_result,
-                    last_studied_at = excluded.last_studied_at
+                    last_studied_at = excluded.last_studied_at,
+                    fsrs_card       = excluded.fsrs_card
                 """,
                 (
                     vocab_id,
@@ -100,8 +119,10 @@ class ReviewRepository:
                     int(result == scheduler.CORRECT),
                     int(result == scheduler.UNSURE),
                     int(result == scheduler.WRONG),
+                    int(result == scheduler.EASY),
                     result,
                     studied_at,
+                    card.to_json(),
                 ),
             )
         return self.get_state(vocab_id)
@@ -194,17 +215,19 @@ class ReviewRepository:
     def count_due(self, today: date) -> int:
         with self._connect() as conn:
             return conn.execute(
-                "SELECT COUNT(*) FROM review_state WHERE next_review <= ?", (today.isoformat(),)
+                "SELECT COUNT(*) FROM review_state r JOIN vocab v ON v.id = r.vocab_id "
+                "WHERE r.next_review <= ?",
+                (today.isoformat(),),
             ).fetchone()[0]
 
     def count_new_studied_on(self, day: date) -> int:
         """指定日に「はじめて」学習した語彙の数。"""
         with self._connect() as conn:
             return conn.execute(
-                """
+                f"""
                 SELECT COUNT(*) FROM (
                     SELECT vocab_id FROM study_log
-                    GROUP BY vocab_id HAVING date(MIN(studied_at)) = ?
+                    GROUP BY vocab_id HAVING {timeutil.sql_date('MIN(studied_at)')} = ?
                 )
                 """,
                 (day.isoformat(),),
@@ -213,7 +236,8 @@ class ReviewRepository:
     def count_answers_on(self, day: date) -> int:
         with self._connect() as conn:
             return conn.execute(
-                "SELECT COUNT(*) FROM study_log WHERE date(studied_at) = ?", (day.isoformat(),)
+                f"SELECT COUNT(*) FROM study_log WHERE {timeutil.sql_date('studied_at')} = ?",
+                (day.isoformat(),),
             ).fetchone()[0]
 
     def ids_in_group(self, group: str) -> list[int]:
@@ -227,7 +251,8 @@ class ReviewRepository:
         if group == "weak":
             return HistoryRepository(self.db_path).weak_ids()
         sql = {
-            "learning": "SELECT vocab_id FROM review_state WHERE interval_days < 21",
+            "learning": "SELECT r.vocab_id FROM review_state r JOIN vocab v ON v.id = r.vocab_id "
+            "WHERE r.interval_days < 21",
             "new": "SELECT id FROM vocab v WHERE NOT EXISTS "
             "(SELECT 1 FROM review_state r WHERE r.vocab_id = v.id)",
         }.get(group, "SELECT id FROM vocab")

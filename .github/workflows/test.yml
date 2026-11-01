@@ -1,0 +1,23 @@
+# GitHub に push したとき・プルリクエストを作ったときに、自動でコードチェックとテストを実行する
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: ライブラリのインストール
+        run: pip install -r requirements-dev.txt
+      - name: コードチェック(ruff)
+        run: ruff check .
+      - name: テスト(pytest)
+        run: pytest -q

@@ -76,12 +76,20 @@ def test_writing_survives_prompt_and_vocab_deletion(repo, writing):
     wid = writing.save_writing(prompt, 100, 200, "本文", 2, [WritingWord(a, "逡巡", True)])
     writing.delete_prompt(prompt.id)
     repo.delete(a)
+    repo.purge(a)  # 語彙を完全に削除
     w = writing.get_writing(wid)
     assert w.prompt_text == prompt.text  # お題の文面は残る
     assert w.words == []  # 語彙との対応だけが消える
 
-    writing.delete_writing(wid)
+    writing.delete_writing(wid)  # ゴミ箱へ
     assert writing.get_writing(wid) is None
+    assert [w.id for w in writing.list_trash()] == [wid]
+    assert writing.count_writings() == 0
+    writing.restore_writing(wid)
+    assert writing.get_writing(wid) is not None
+    writing.delete_writing(wid)
+    writing.purge_writing(wid)
+    assert writing.list_trash() == []
 
 
 def test_pick_vocab_modes(repo, writing):
