@@ -247,11 +247,42 @@ def _v8_fsrs(conn: sqlite3.Connection) -> None:
     ])
 
 
+def _v9_reading(conn: sqlite3.Connection) -> None:
+    """読解トレーニング:読んだ文章(要約つき)と、そこで出会った語(語彙ライブラリへの登録候補)。"""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS reading_notes (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            title      TEXT NOT NULL,
+            source     TEXT NOT NULL DEFAULT '',
+            body       TEXT NOT NULL,
+            summary    TEXT NOT NULL DEFAULT '',
+            feedback   TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+        );
+        -- 登録候補の語。文章から拾ったもの(note_id あり)と、言葉だけメモしたもの(note_id なし)
+        CREATE TABLE IF NOT EXISTS reading_candidates (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            note_id    INTEGER REFERENCES reading_notes(id) ON DELETE CASCADE,
+            word       TEXT NOT NULL,
+            sentence   TEXT NOT NULL DEFAULT '',
+            source     TEXT NOT NULL DEFAULT '',
+            status     TEXT NOT NULL DEFAULT 'pending',   -- pending / registered / ignored
+            vocab_id   INTEGER REFERENCES vocab_all(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_candidates_status ON reading_candidates(status);
+        """
+    )
+
+
 # (移行後のバージョン, 移行処理)。新しい変更はこのリストの最後に足す
 MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
     (6, _baseline),
     (7, _v7_trash_and_examples),
     (8, _v8_fsrs),
+    (9, _v9_reading),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 

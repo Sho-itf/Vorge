@@ -89,6 +89,8 @@ features = [
      "例文の空欄に入る語彙を選び、文脈での使い分けを確かめる"),
     ("views/writing.py", "作文トレーニング", ":material/edit_note:",
      "お題と指定の語彙で文章を書き、使い方を身につける"),
+    ("views/reading.py", "読解トレーニング", ":material/chrome_reader_mode:",
+     "読んだ文章から語彙を拾って登録し、要約で理解を深める"),
     ("views/debate.py", "議論トレーニング", ":material/forum:",
      "型に沿って主張・根拠・反論・再反論を組み立てる"),
     ("views/history.py", "学習履歴", ":material/insights:",

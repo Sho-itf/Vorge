@@ -119,6 +119,10 @@ div.vg-card.vg-quiz p.vg-quiz-text { font-size: 1.5rem; line-height: 1.9; margin
 .vg-record-item { padding: 0.35rem 0; border-bottom: 1px solid rgba(128, 128, 128, 0.15); }
 .vg-record-item .vg-muted { font-size: 0.8rem; }
 
+/* 読解トレーニング:登録済みの語彙の印 */
+mark.vg-known { background: rgba(245, 158, 11, 0.28); color: inherit; padding: 0 0.1em; border-radius: 3px; }
+.vg-reading-body { line-height: 2; }
+
 /* ホーム画面の機能カード */
 .vg-feature-desc { opacity: 0.7; font-size: 0.9rem; min-height: 2.8em; }
 

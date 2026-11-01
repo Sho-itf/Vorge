@@ -46,6 +46,7 @@ pages = {
         st.Page("views/quiz.py", title="穴埋めクイズ", icon=":material/quiz:"),
         st.Page("views/writing.py", title="作文トレーニング", icon=":material/edit_note:"),
         st.Page("views/debate.py", title="議論トレーニング", icon=":material/forum:"),
+        st.Page("views/reading.py", title="読解トレーニング", icon=":material/chrome_reader_mode:"),
     ],
     "記録・データ": [
         st.Page("views/history.py", title="学習履歴", icon=":material/insights:"),
