@@ -121,6 +121,26 @@ div.vg-card.vg-quiz p.vg-quiz-text { font-size: 1.5rem; line-height: 1.9; margin
 
 /* ホーム画面の機能カード */
 .vg-feature-desc { opacity: 0.7; font-size: 0.9rem; min-height: 2.8em; }
+
+/* ---------- スマホなど幅の狭い画面(640px 以下) ---------- */
+@media (max-width: 640px) {
+    .block-container { padding: 1.2rem 0.8rem 3rem; }
+    div.vg-card { padding: 1rem 1.1rem; }
+    div.vg-card p.vg-word { font-size: 1.6rem; }
+    div.vg-card p.vg-flash-text { font-size: 2rem; }
+    div.vg-card.vg-flash { min-height: 160px; }
+    div.vg-card.vg-flash p.vg-flash-text.vg-long,
+    div.vg-card.vg-quiz p.vg-quiz-text,
+    div.vg-card.vg-prompt p.vg-prompt-text { font-size: 1.2rem; }
+    /* 一覧の行は折り返して縦に並べる(PC 用の「1 行に収める」指定を解除) */
+    div[class*="st-key-vrow-"] [data-testid="stHorizontalBlock"],
+    .st-key-vlist-head [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
+    .st-key-vlist-head { display: none; }
+    div[class*="st-key-vrow-"] [data-testid="stColumn"]:last-child { flex: 1 1 100%; }
+    /* 指で押しやすいよう、ボタンを少し大きく */
+    .stButton button, .stFormSubmitButton button { min-height: 2.75rem; }
+    table.vg-compare td, table.vg-compare th { padding: 0.35rem 0.25rem; font-size: 0.9rem; }
+}
 </style>
 """
 
