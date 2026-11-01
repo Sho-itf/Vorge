@@ -15,10 +15,12 @@ from vorge.ui.components import (
     stars,
     vocab_card,
     vocab_form,
+    vocab_link_html,
 )
 from vorge.ui.learning_record import show_learning_record
 from vorge.ui.persist import load_settings, save_setting
 from vorge.vocab.models import Vocab
+from vorge.vocab.relations import linked_terms, other_senses, sense_number, synonym_ids, word_index
 from vorge.vocab.repository import SORT_OPTIONS, VocabRepository
 from vorge.writing.repository import WritingRepository
 
@@ -65,16 +67,24 @@ def list_columns() -> list[tuple[str, float]]:
     return columns
 
 
+def sense_badge(v: Vocab) -> str:
+    """同じ語が複数登録されているときの「①」「②」の印(意味違いの区別)。"""
+    n = sense_number(v, WORD_INDEX)
+    return f'<span class="vg-sense" title="同じ語の {n} 番目の意味">{chr(0x2460 + n - 1)}</span>' if n else ""
+
+
 def show_row(v: Vocab, state: ReviewState | None, columns: list[tuple[str, float]]) -> None:
     """語彙 1 件分の行。key を付けた container には CSS 用のクラス st-key-… が付く。"""
     with st.container(key=f"vrow-{v.id}"):
         cols = st.columns([w for _, w in columns], vertical_alignment="center")
-        html(cols[0], f'<div class="vg-list-word">{ruby_html(v.word, v.reading)}</div>')
+        html(cols[0], f'<div class="vg-list-word">{ruby_html(v.word, v.reading)}{sense_badge(v)}</div>')
         html(cols[1], f'<div class="vg-list-text">{escape(v.meaning)}</div>')
-        examples = [x for x in (v.example_1, v.example_2) if x]
+        examples = v.all_examples
+        more = f'<div class="vg-list-ex vg-muted">ほか {len(examples) - 2} 件</div>' if len(examples) > 2 else ""
         html(
             cols[2],
-            "".join(f'<div class="vg-list-ex">{highlight_html(x, v.word)}</div>' for x in examples)
+            "".join(f'<div class="vg-list-ex">{highlight_html(x, v.word)}</div>' for x in examples[:2])
+            + more
             or '<div class="vg-list-ex vg-muted">—</div>',
         )
         for col, (name, _) in zip(cols[3:-1], columns[3:-1]):
@@ -123,6 +133,39 @@ def show_vocab_list(results: list[Vocab], states: dict[int, ReviewState], page_s
     pager(page_count, "bottom")
 
 
+def show_relations(vocab: Vocab) -> None:
+    """同じ語の別の意味へのリンクと、登録済みの類義語との使い分けの比較。"""
+    others = other_senses(vocab, WORD_INDEX)
+    if others:
+        other_vocab = repo.get_many(others)
+        links = "".join(
+            vocab_link_html(f"{chr(0x2460 + sense_number(o, WORD_INDEX) - 1)} {o.meaning[:24]}", o.id)
+            for o in other_vocab.values()
+        )
+        html(st, f'<p class="vg-label">この語のほかの意味</p>{links}')
+
+    syn_ids = synonym_ids(vocab, ALL_VOCAB, WORD_INDEX)
+    if not syn_ids:
+        return
+    group = [vocab, *repo.get_many(syn_ids).values()]
+    with st.expander(f"🔀 似た語との使い分け({len(group)} 語)"):
+        rows = []
+        for v in group:
+            example = v.all_examples[0] if v.all_examples else ""
+            rows.append(
+                '<tr>'
+                f'<td class="vg-list-word">{ruby_html(v.word, v.reading)}</td>'
+                f'<td>{escape(v.meaning)}'
+                + (f'<div class="vg-list-ex">ニュアンス:{escape(v.nuance)}</div>' if v.nuance else "")
+                + "</td>"
+                f'<td class="vg-list-ex">{highlight_html(example, v.word)}</td>'
+                "</tr>"
+            )
+        html(st, '<table class="vg-compare"><tr><th>語彙</th><th>意味・ニュアンス</th><th>例文</th></tr>'
+                 + "".join(rows) + "</table>")
+        st.caption("穴埋めクイズの「使い分け」モードで、これらの語を選び分ける練習ができます。")
+
+
 @st.dialog("語彙の詳細", width="large")
 def detail_dialog(vocab_id: int, categories: list[str]) -> None:
     """語彙の詳細ポップアップ。中で「編集」「削除」に切り替えられる。
@@ -151,19 +194,20 @@ def detail_dialog(vocab_id: int, categories: list[str]) -> None:
             st.rerun(scope="fragment")
 
     elif ss.dialog_mode == "delete":
-        st.write(f"「**{vocab.word}**」(ID {vocab.id})を削除します。")
-        st.warning("この語彙のフラッシュカードの学習記録も一緒に削除されます。この操作は取り消せません。")
+        st.write(f"「**{vocab.word}**」(ID {vocab.id})をゴミ箱に移します。")
+        st.info("学習記録は残ります。「データ管理」の「ゴミ箱」から元に戻せます。")
         c1, c2 = st.columns(2)
-        if c1.button("削除する", type="primary", width="stretch"):
+        if c1.button("ゴミ箱に移す", type="primary", width="stretch"):
             repo.delete(vocab.id)
-            set_flash(f"「{vocab.word}」を削除しました")
+            set_flash(f"「{vocab.word}」をゴミ箱に移しました")
             st.rerun()
         if c2.button("キャンセル", width="stretch"):
             ss.dialog_mode = "view"
             st.rerun(scope="fragment")
 
     else:
-        vocab_card(vocab, review_repo.get_state(vocab.id))
+        vocab_card(vocab, review_repo.get_state(vocab.id), linked=linked_terms(vocab, WORD_INDEX))
+        show_relations(vocab)
         used = writing_repo.usage_count(vocab.id)
         with st.expander(f"📒 学習の記録(作文・議論で使った回数:{used} 回)"):
             show_learning_record(vocab)
@@ -179,6 +223,16 @@ def detail_dialog(vocab_id: int, categories: list[str]) -> None:
 st.title("語彙ライブラリ")
 categories = repo.list_categories()
 total = repo.count()
+ALL_VOCAB = repo.list_all()
+WORD_INDEX = word_index(ALL_VOCAB)  # 語 → 語彙ID(関連語のリンク・多義語の印に使う)
+
+# 他の語彙の詳細からリンク(?vocab=ID)で来たときは、その語彙を開く
+if "vocab" in st.query_params:
+    try:
+        open_detail(int(st.query_params["vocab"]))
+    except ValueError:
+        pass
+    del st.query_params["vocab"]
 
 # ポップアップを開く(画面全体の再描画で呼ばれなくなると、ポップアップは閉じる)
 if ss.open_id is not None:

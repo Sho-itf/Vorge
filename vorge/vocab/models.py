@@ -87,6 +87,15 @@ class Vocab:
     id: int | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    deleted_at: str | None = None  # ゴミ箱に入れた日時(入っていなければ None)
+    # 3 本目以降の例文(別テーブル vocab_examples)。None は「読み込んでいない/変更しない」の意味で、
+    # CSV の取り込みで上書きしても、アプリで追加した例文が消えないようにしている
+    extra_examples: list[str] | None = None
+
+    @property
+    def all_examples(self) -> list[str]:
+        """例文をすべて(例文 1・2 と、3 本目以降)。空のものは除く。"""
+        return [e for e in (self.example_1, self.example_2, *(self.extra_examples or [])) if e]
 
     @classmethod
     def from_row(cls, row: Mapping[str, Any]) -> "Vocab":
@@ -107,6 +116,8 @@ class Vocab:
         result = replace(self, **cleaned)
         if not result.category:
             result.category = UNCATEGORIZED
+        if result.extra_examples is not None:
+            result.extra_examples = [e.strip() for e in result.extra_examples if e.strip()]
         return result
 
     def validate(self) -> list[str]:

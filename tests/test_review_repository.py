@@ -95,9 +95,16 @@ def test_all_states(repo, review):
     assert states[a].mastery == "学習中"
 
 
-def test_deleting_vocab_deletes_its_records(repo, review):
+def test_trash_keeps_records_and_purge_deletes_them(repo, review):
     vid = add(repo)
     review.record_answer(vid, CORRECT, now=DAY1)
+    repo.delete(vid)  # ゴミ箱へ:学習記録は残るが、出題や集計には出てこない
+    assert repo.get(vid) is None
+    assert review.get_state(vid) is not None
+    assert review.count_due(DAY1.date() + timedelta(days=30)) == 0
+    repo.restore(vid)
+    assert repo.get(vid) is not None
     repo.delete(vid)
+    repo.purge(vid)  # 完全に削除:学習記録も消える
     assert review.get_state(vid) is None
     assert review.history(vid) == []

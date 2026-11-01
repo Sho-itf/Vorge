@@ -1,4 +1,4 @@
-"""データ管理画面:CSV のインポート・エクスポートと、バックアップ。
+"""データ管理画面:CSV のインポート・エクスポート、バックアップ、ゴミ箱。
 
 インポートは 3 ステップ:
   ① ファイルを選ぶ → ② 検証結果を確認(まだ保存しない)→ ③「インポートを実行」で保存
@@ -11,6 +11,7 @@ import streamlit as st
 
 from vorge import config
 from vorge.ui.backup_panel import show_backup_panel
+from vorge.ui.trash_panel import show_trash_panel
 from vorge.vocab.csv_io import (
     CsvFormatError,
     ParseResult,
@@ -26,8 +27,8 @@ repo = VocabRepository()
 st.session_state.setdefault("uploader_version", 0)  # アップロード欄をリセットするための番号
 
 st.title("データ管理")
-tab_import, tab_export, tab_backup = st.tabs(
-    ["📥 CSVインポート", "📤 CSVエクスポート", "💾 バックアップ"]
+tab_import, tab_export, tab_backup, tab_trash = st.tabs(
+    ["📥 CSVインポート", "📤 CSVエクスポート", "💾 バックアップ", "🗑 ゴミ箱"]
 )
 
 
@@ -292,3 +293,7 @@ with tab_export:
 # ============ バックアップ ============
 with tab_backup:
     show_backup_panel()
+
+# ============ ゴミ箱 ============
+with tab_trash:
+    show_trash_panel()

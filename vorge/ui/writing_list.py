@@ -81,10 +81,10 @@ def show_saved_list(repo: WritingRepository, vocab_repo: VocabRepository) -> Non
             if c1.toggle("添削依頼文を表示", key=f"show_review_{w.id}"):
                 st.code(review_prompt_for(w, vocab_repo), language=None, wrap_lines=True)
             with c2.popover("🗑️ 削除"):
-                st.write("この作文を削除します。取り消せません。")
-                if st.button("削除する", key=f"del_{w.id}", type="primary"):
+                st.write("この作文をゴミ箱に移します(「データ管理」の「ゴミ箱」から元に戻せます)。")
+                if st.button("ゴミ箱に移す", key=f"del_{w.id}", type="primary"):
                     repo.delete_writing(w.id)
-                    set_flash("作文を削除しました")
+                    set_flash("作文をゴミ箱に移しました")
                     st.rerun()
 
     if len(writings) > ss.wr_history_limit:

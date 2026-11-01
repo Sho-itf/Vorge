@@ -43,6 +43,7 @@ class Writing:
     stance: str  # 以下 3 つは議論トレーニング(kind = "debate")の行だけが使う
     template: str
     sections: str  # 欄ごとの文章(JSON)
+    deleted_at: str | None  # ゴミ箱に入れた日時(入っていなければ None)
     words: list[WritingWord]
 
     @property
@@ -179,21 +180,45 @@ class WritingRepository:
             )
 
     def delete_writing(self, writing_id: int) -> None:
+        """ゴミ箱に移す(元に戻せる)。"""
         with self._connect() as conn:
-            conn.execute("DELETE FROM writings WHERE id = ?", (writing_id,))
+            conn.execute(
+                "UPDATE writings SET deleted_at = datetime('now', 'localtime') WHERE id = ?",
+                (writing_id,),
+            )
 
-    def list_writings(self, vocab_id: int | None = None, kind: str | None = None) -> list[Writing]:
-        """作文の一覧(新しい順)。vocab_id を指定すると、その語彙を使った作文だけ。"""
-        where, params = [], []
+    def restore_writing(self, writing_id: int) -> None:
+        with self._connect() as conn:
+            conn.execute("UPDATE writings SET deleted_at = NULL WHERE id = ?", (writing_id,))
+
+    def purge_writing(self, writing_id: int) -> None:
+        """ゴミ箱の作文を完全に削除する(取り消せない)。"""
+        with self._connect() as conn:
+            conn.execute("DELETE FROM writings WHERE id = ? AND deleted_at IS NOT NULL", (writing_id,))
+
+    def empty_trash(self) -> int:
+        with self._connect() as conn:
+            return conn.execute("DELETE FROM writings WHERE deleted_at IS NOT NULL").rowcount
+
+    def list_trash(self) -> list[Writing]:
+        return self.list_writings(trashed=True)
+
+    def list_writings(
+        self, vocab_id: int | None = None, kind: str | None = None, trashed: bool = False
+    ) -> list[Writing]:
+        """作文の一覧(新しい順)。vocab_id を指定すると、その語彙を使った作文だけ。
+
+        trashed=True ならゴミ箱の中の作文、False(既定)ならゴミ箱以外の作文。
+        """
+        where = ["deleted_at IS NOT NULL" if trashed else "deleted_at IS NULL"]
+        params: list = []
         if vocab_id is not None:
             where.append("id IN (SELECT writing_id FROM writing_vocab WHERE vocab_id = ?)")
             params.append(vocab_id)
         if kind:
             where.append("kind = ?")
             params.append(kind)
-        sql = "SELECT * FROM writings"
-        if where:
-            sql += " WHERE " + " AND ".join(where)
+        sql = "SELECT * FROM writings WHERE " + " AND ".join(where)
         with self._connect() as conn:
             rows = conn.execute(sql + " ORDER BY created_at DESC, id DESC", params).fetchall()
             links = conn.execute(
@@ -209,37 +234,43 @@ class WritingRepository:
     def get_writing(self, writing_id: int) -> Writing | None:
         return next((w for w in self.list_writings() if w.id == writing_id), None)
 
+    # ゴミ箱の作文を集計から除くための条件(writing_vocab と組み合わせるとき用)
+    _ACTIVE = "writing_id IN (SELECT id FROM writings WHERE deleted_at IS NULL)"
+
     # ---------- 集計 ----------
 
     def usage_count(self, vocab_id: int) -> int:
         """その語彙を作文で実際に使えた回数。"""
         with self._connect() as conn:
             return conn.execute(
-                "SELECT COUNT(*) FROM writing_vocab WHERE vocab_id = ? AND used = 1", (vocab_id,)
+                f"SELECT COUNT(*) FROM writing_vocab WHERE vocab_id = ? AND used = 1 AND {self._ACTIVE}",
+                (vocab_id,),
             ).fetchone()[0]
 
     def written_vocab(self) -> list[tuple[int, str]]:
         """作文で指定したことのある語彙 (id, 語彙)。一覧の絞り込み用。"""
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT DISTINCT vocab_id, word FROM writing_vocab ORDER BY word"
+                f"SELECT DISTINCT vocab_id, word FROM writing_vocab WHERE {self._ACTIVE} ORDER BY word"
             ).fetchall()
         return [(r[0], r[1]) for r in rows]
 
     def count_writings(self) -> int:
         with self._connect() as conn:
-            return conn.execute("SELECT COUNT(*) FROM writings").fetchone()[0]
+            return conn.execute("SELECT COUNT(*) FROM writings WHERE deleted_at IS NULL").fetchone()[0]
 
     def count_writing_days(self) -> int:
         with self._connect() as conn:
             return conn.execute(
-                f"SELECT COUNT(DISTINCT {timeutil.sql_date('created_at')}) FROM writings"
+                f"SELECT COUNT(DISTINCT {timeutil.sql_date('created_at')}) FROM writings "
+                "WHERE deleted_at IS NULL"
             ).fetchone()[0]
 
     def count_writings_on(self, day: date) -> int:
         with self._connect() as conn:
             return conn.execute(
-                f"SELECT COUNT(*) FROM writings WHERE {timeutil.sql_date('created_at')} = ?",
+                f"SELECT COUNT(*) FROM writings WHERE {timeutil.sql_date('created_at')} = ? "
+                "AND deleted_at IS NULL",
                 (day.isoformat(),),
             ).fetchone()[0]
 

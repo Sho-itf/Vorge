@@ -200,9 +200,45 @@ def _baseline(conn: sqlite3.Connection) -> None:
         _add_missing_columns(conn, table, columns)
 
 
+def _tables(conn: sqlite3.Connection) -> set[str]:
+    return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+
+
+def _v7_trash_and_examples(conn: sqlite3.Connection) -> None:
+    """ゴミ箱と、3 本目以降の例文。
+
+    - 語彙の本体を vocab_all に改名し、deleted_at(ゴミ箱に入れた日時)を追加する。
+      「vocab」はゴミ箱に入っていない語彙だけを見せるビューにするので、読み取り側の SQL は今までどおり使える。
+      書き込み(追加・更新・削除)は vocab_all に対して行う。
+      ※ ビューは SELECT * の列を作成時点で固定するので、vocab_all に列を足したらビューも作り直すこと
+    - 改名すると、他のテーブルからの参照(REFERENCES vocab)も SQLite が自動で vocab_all に書き換える
+    - 作文にも deleted_at を追加(ゴミ箱)
+    - 例文 3 本目以降を入れる vocab_examples テーブル(例文 1・2 は今までどおり vocab_all の列)
+    """
+    if "vocab_all" not in _tables(conn):
+        conn.execute("ALTER TABLE vocab RENAME TO vocab_all")
+    _add_missing_columns(conn, "vocab_all", [("deleted_at", "TEXT")])
+    conn.execute("DROP VIEW IF EXISTS vocab")
+    conn.execute("CREATE VIEW vocab AS SELECT * FROM vocab_all WHERE deleted_at IS NULL")
+    _add_missing_columns(conn, "writings", [("deleted_at", "TEXT")])
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS vocab_examples (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            vocab_id   INTEGER NOT NULL REFERENCES vocab_all(id) ON DELETE CASCADE,
+            sentence   TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_examples_vocab ON vocab_examples(vocab_id)")
+
+
 # (移行後のバージョン, 移行処理)。新しい変更はこのリストの最後に足す
 MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
     (6, _baseline),
+    (7, _v7_trash_and_examples),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
