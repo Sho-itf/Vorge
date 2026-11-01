@@ -4,9 +4,11 @@ from datetime import datetime
 
 import pytest
 
-from vorge import backup, db, timeutil
+from vorge import backup, daily, db, timeutil
 from vorge.db import SCHEMA_VERSION, init_db, migrate
 from vorge.flashcard.repository import ReviewRepository
+from vorge.quiz.repository import FORMAT_CHOICE, QuizRepository
+from vorge.settings import set_setting
 from vorge.vocab.models import Vocab
 from vorge.vocab.repository import VocabRepository
 from vorge.writing import prompts as P
@@ -97,3 +99,16 @@ def test_logical_day_boundary():
     assert timeutil.sql_date("studied_at") == "date(studied_at, '-4 hours')"
     with pytest.raises(ValueError):
         timeutil.set_day_start_hour(13)
+
+
+def test_daily_tasks(repo):
+    day = datetime(2026, 11, 1, 9)
+    vid = repo.add(Vocab(word="俯瞰", meaning="m"))
+    tasks = {t.key: t for t in daily.today_tasks(day.date(), repo.db_path)}
+    assert tasks["review"].done and not tasks["new"].done and tasks["new"].progress_text == "0 / 10 語"
+    ReviewRepository(repo.db_path).record_answer(vid, "correct", now=day)
+    QuizRepository(repo.db_path).record(vid, FORMAT_CHOICE, True, "俯瞰", now=day)
+    set_setting("daily_new", 1, repo.db_path)
+    set_setting("daily_writing", 0, repo.db_path)  # 0 ならメニューから外れる
+    tasks = {t.key: t for t in daily.today_tasks(day.date(), repo.db_path)}
+    assert tasks["new"].done and tasks["quiz"].current == 1 and "writing" not in tasks

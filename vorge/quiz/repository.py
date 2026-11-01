@@ -158,6 +158,13 @@ class QuizRepository:
         with self._connect() as conn:
             return conn.execute("SELECT COUNT(*) FROM quiz_log").fetchone()[0]
 
+    def count_answers_on(self, day: date) -> int:
+        with self._connect() as conn:
+            return conn.execute(
+                f"SELECT COUNT(*) FROM quiz_log WHERE {timeutil.sql_date('answered_at')} = ?",
+                (day.isoformat(),),
+            ).fetchone()[0]
+
     def accuracy_between(self, start: date, end: date) -> float | None:
         with self._connect() as conn:
             total, correct = conn.execute(

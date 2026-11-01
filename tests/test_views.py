@@ -225,3 +225,11 @@ def test_flashcard_cloze_with_typed_answer(app):
     assert any("正解です" in s.value for s in app.success)
     click(app, "🌟 簡単")
     assert app.session_state["fc_results"][0]["結果"] == "簡単"
+
+
+def test_home_daily_menu_starts_flashcard(app):
+    open_page(app, "views/home.py")
+    assert any("今日の学習" in s.value for s in app.subheader)
+    click(app, "続きから")
+    assert app.session_state["fc_label"] == "今日の学習"
+    assert len(app.session_state["fc_queue"]) == len(WORDS)  # 目標 10 語 > 登録 6 語なので全部
