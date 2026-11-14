@@ -1,57 +1,73 @@
-// 語彙の詳細カード(ライブラリの詳細画面と、単語カードの答え面で使う)。
+// 語彙 1 件の詳細カード(Python 版の vorge/ui/components.py の vocab_card と同じ並び)。
+// ライブラリの詳細ポップアップと、単語カードの答え面で使う。
 
 import type { App } from "../app.ts";
-import { intervalText, masteryLabel, RESULT_LABELS } from "../lib/scheduler.ts";
+import { senseNumber } from "../lib/library.ts";
+import { masteryLabel } from "../lib/scheduler.ts";
 import type { Vocab } from "../lib/vocab.ts";
-import { esc, highlight, ruby, vocabHref } from "./dom.ts";
+import { esc, ruby, vocabHref } from "./dom.ts";
 
-/** 類義語・対義語を、登録済みの語ならリンクにして並べる。 */
-function termLinks(app: App, terms: string[], self: Vocab): string {
-  return terms
-    .map((t) => {
-      const keys = app.byWord.get(t)?.filter((k) => k !== self.key);
-      return keys?.length ? `<a class="chip link" href="${vocabHref(keys[0])}">${esc(t)}</a>` : `<span class="chip">${esc(t)}</span>`;
-    })
+export function stars(level: number): string {
+  return "★".repeat(level) + "☆".repeat(5 - level);
+}
+
+/** 同じ語が複数登録されているときの「①」「②」の印(意味違いの区別)。 */
+export function senseBadge(app: App, v: Vocab): string {
+  const n = senseNumber(v, app.byWord);
+  return n ? `<span class="vg-sense" title="同じ語の ${n} 番目の意味">${String.fromCodePoint(0x2460 + n - 1)}</span>` : "";
+}
+
+/** 登録済みの語彙へのリンク(ライブラリでその語彙の詳細を開く)。 */
+export function vocabLink(term: string, key: string): string {
+  return `<a class="vg-chip vg-chip-link" href="${vocabHref(key)}">${esc(term)}</a>`;
+}
+
+function dictionaryLinks(word: string): string {
+  const q = encodeURIComponent(word);
+  return [
+    ["コトバンク", `https://kotobank.jp/search?q=${q}`],
+    ["Weblio", `https://www.weblio.jp/content/${q}`],
+  ]
+    .map(([name, url]) => `<a class="vg-dict" href="${url}" target="_blank" rel="noopener">📖 ${name}</a>`)
     .join("");
 }
 
-/** 片方にしか類義語として書いていなくても、つながっているものとして扱う。 */
-function reverseSynonyms(app: App, v: Vocab): Vocab[] {
-  return app.vocabs.filter((o) => o.key !== v.key && o.synonyms.includes(v.word) && !v.synonyms.includes(o.word));
-}
+/**
+ * 空の項目は表示しない。linked を true にすると、類義語・対義語のうち登録済みの語をリンクにする。
+ */
+export function vocabCardHtml(app: App, v: Vocab, opts: { linked?: boolean } = {}): string {
+  const review = app.store.get(v.key);
+  const label = (text: string) => `<p class="vg-label">${text}</p>`;
+  const chips = (terms: string[]) =>
+    terms
+      .map((t) => {
+        const key = opts.linked && t !== v.word ? app.byWord.get(t)?.[0] : undefined;
+        return key ? vocabLink(t, key) : `<span class="vg-chip">${esc(t)}</span>`;
+      })
+      .join("");
 
-function recordHtml(app: App, v: Vocab): string {
-  const s = app.store.get(v.key);
-  if (!s) return `<p class="muted">まだ単語カードで学習していません。</p>`;
-  return `
-    <dl class="record">
-      <div><dt>習得状況</dt><dd><span class="badge m-${masteryLabel(s.interval)}">${masteryLabel(s.interval)}</span></dd></div>
-      <div><dt>次回の復習</dt><dd>${esc(s.next)}(間隔 ${esc(intervalText(s.interval))})</dd></div>
-      <div><dt>回答</dt><dd>${s.count} 回(正解 ${s.correct} ・ 簡単 ${s.easy} ・ 自信がない ${s.unsure} ・ 不正解 ${s.wrong})</dd></div>
-      <div><dt>前回</dt><dd>${esc(s.lastAt)}(${esc(RESULT_LABELS[s.last])})</dd></div>
-    </dl>`;
-}
-
-export function vocabCardHtml(app: App, v: Vocab, opts: { showRecord?: boolean } = {}): string {
-  const sense = (app.byWord.get(v.word)?.length ?? 0) > 1 ? `<span class="muted">(意味 ${esc(v.key.split("#")[1])})</span>` : "";
-  const others = (app.byWord.get(v.word) ?? []).filter((k) => k !== v.key);
-  const reverse = reverseSynonyms(app, v);
-  const section = (title: string, body: string) => (body ? `<section><h3>${title}</h3>${body}</section>` : "");
-  return `
-    <article class="card vocab-card">
-      <p class="meta">${esc(v.category)} ・ 難易度 ${"★".repeat(v.difficulty)}${"☆".repeat(5 - v.difficulty)}</p>
-      <h2 class="vocab-word">${ruby(v.word, v.reading)} ${sense}</h2>
-      <p class="meaning">${esc(v.meaning)}</p>
-      ${section("例文", v.examples.length ? `<ul class="examples">${v.examples.map((e) => `<li>${highlight(e, v.word)}</li>`).join("")}</ul>` : "")}
-      ${section("ニュアンス・使い方", v.nuance ? `<p>${esc(v.nuance)}</p>` : "")}
-      ${section("類義語", v.synonyms.length || reverse.length ? `<div class="chips">${termLinks(app, v.synonyms, v)}${reverse.map((o) => `<a class="chip link" href="${vocabHref(o.key)}">${esc(o.word)}</a>`).join("")}</div>` : "")}
-      ${section("対義語", v.antonyms.length ? `<div class="chips">${termLinks(app, v.antonyms, v)}</div>` : "")}
-      ${section("よく一緒に使う言葉", v.collocations.length ? `<div class="chips">${v.collocations.map((c) => `<span class="chip">${esc(c)}</span>`).join("")}</div>` : "")}
-      ${section("同じ語の別の意味", others.length ? `<div class="chips">${others.map((k) => `<a class="chip link" href="${vocabHref(k)}">${esc(app.byKey.get(k)?.meaning ?? k)}</a>`).join("")}</div>` : "")}
-      ${opts.showRecord ? section("学習の記録", recordHtml(app, v)) : ""}
-      <p class="dict">辞書で調べる:
-        <a href="https://kotobank.jp/search?q=${encodeURIComponent(v.word)}" target="_blank" rel="noopener">コトバンク</a> ・
-        <a href="https://www.weblio.jp/content/${encodeURIComponent(v.word)}" target="_blank" rel="noopener">Weblio</a>
-      </p>
-    </article>`;
+  const parts = [
+    '<div class="vg-card">',
+    `<span class="vg-badge">${esc(v.category)}</span><span class="vg-badge vg-badge-sub">${masteryLabel(review?.interval)}</span>` +
+      `<span class="vg-stars" title="難易度 ${v.difficulty}">${stars(v.difficulty)}</span>`,
+    `<p class="vg-word">${ruby(v.word, v.reading)}${senseBadge(app, v)}</p>`,
+    `<p class="vg-meaning">${esc(v.meaning)}</p>`,
+  ];
+  if (v.examples.length) {
+    parts.push(label("例文"), ...v.examples.map((x) => `<p class="vg-text">・${esc(x)}</p>`));
+  }
+  if (v.nuance) parts.push(label("ニュアンス"), `<p class="vg-text">${esc(v.nuance)}</p>`);
+  if (v.synonyms.length) parts.push(label("類義語"), `<div>${chips(v.synonyms)}</div>`);
+  if (v.antonyms.length) parts.push(label("対義語"), `<div>${chips(v.antonyms)}</div>`);
+  if (v.collocations.length) parts.push(label("コロケーション"), `<div>${v.collocations.map((t) => `<span class="vg-chip">${esc(t)}</span>`).join("")}</div>`);
+  if (v.source) parts.push(label("出典"), `<p class="vg-text">${esc(v.source)}</p>`);
+  if (review) {
+    parts.push(
+      label("学習状況"),
+      `<p class="vg-text">次回復習 ${esc(review.next)}(間隔 ${review.interval}日) ・ 正解 ${review.correct + review.easy}` +
+        ` / 自信なし ${review.unsure} / 不正解 ${review.wrong}</p>`,
+    );
+  }
+  parts.push(`<p class="vg-dicts">${dictionaryLinks(v.word)}</p>`, "</div>");
+  return parts.join("");
 }

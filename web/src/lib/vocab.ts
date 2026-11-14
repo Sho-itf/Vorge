@@ -13,6 +13,8 @@ export interface Vocab {
   collocations: string[];
   category: string;
   difficulty: number;
+  /** 出典 */
+  source: string;
 }
 
 /** 「概観,鳥瞰」「概観、鳥瞰」のような区切り文字列を配列にする。 */
@@ -52,6 +54,7 @@ export function buildVocabList(records: Record<string, string>[]): Vocab[] {
       collocations: splitTerms(r.collocations ?? ""),
       category: r.category || "未分類",
       difficulty: difficulty >= 1 && difficulty <= 5 ? difficulty : 3,
+      source: r.source ?? "",
     });
   }
   return list;
