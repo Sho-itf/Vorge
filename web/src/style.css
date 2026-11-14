@@ -287,6 +287,8 @@ table.vg-compare td, table.vg-compare th { padding: 0.45rem 0.5rem; border-botto
   .vg-filters { grid-template-columns: 1fr 1fr; }
   .vg-filters .vg-field:first-child { grid-column: 1 / -1; }
   .vg-info { flex-wrap: wrap; }
+  /* 「表示する項目」ボタンは左側に来るので、メニューも左端にそろえ、画面からはみ出さないようにする */
+  .vg-popover .vg-menu { left: 0; right: auto; width: min(18rem, calc(100vw - 2rem)); min-width: 0; }
   .vg-row.vg-list-head { display: none; }
   .vg-row { display: flex; flex-wrap: wrap; gap: 0.2rem 1rem; }
   .vg-row .vg-cell { flex: 1 1 100%; }
