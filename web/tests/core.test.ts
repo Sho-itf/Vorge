@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { blanksFor, findBlank, matchesWord, wordVariants } from "../src/lib/blank.ts";
 import { csvRecords, parseCsv } from "../src/lib/csv.ts";
+import { daysSinceBackup, masteryCounts, newKeysOn, streak, todayPlan, wordOfDay } from "../src/lib/daily.ts";
 import { addDays, daysBetween, logicalDate } from "../src/lib/day.ts";
 import { searchVocabs, senseNumber, synonymGroup, type LibraryQuery } from "../src/lib/library.ts";
 import { buildQueue, dueKeys, newKeys, Session } from "../src/lib/queue.ts";
@@ -203,6 +204,59 @@ describe("語彙ライブラリの検索", () => {
     expect(words(synonymGroup(vocabs[1], vocabs, byWord, byKey))).toEqual(["概観", "俯瞰"]);
     expect(senseNumber(vocabs[0], new Map([["俯瞰", ["x#1", "俯瞰#1"]]]))).toBe(2);
     expect(senseNumber(vocabs[0], byWord)).toBeNull();
+  });
+});
+
+describe("ホームの集計", () => {
+  const vocabs = ["a", "b", "c", "d"].map((w) => vocab(w));
+  const at = (d: number, h = 12) => new Date(2026, 10, d, h, 0);
+
+  it("今日の学習:復習の残り・新しい語の目標・完了", () => {
+    const store = new RecordStore(new MemoryStorage());
+    store.recordAnswer("a#1", "wrong", "word_to_meaning", at(13)); // 11/14 が復習日
+    let plan = todayPlan(vocabs, store.data.reviews, store.data.log, "2026-11-14", 2);
+    expect(plan).toMatchObject({ reviewed: 0, dueRemaining: 1, learnedNew: 0, newRemaining: 2, done: false });
+
+    store.recordAnswer("a#1", "correct", "word_to_meaning", at(14));
+    store.recordAnswer("b#1", "correct", "word_to_meaning", at(14));
+    store.recordAnswer("c#1", "correct", "word_to_meaning", at(14));
+    plan = todayPlan(vocabs, store.data.reviews, store.data.log, "2026-11-14", 2);
+    expect(plan).toMatchObject({ reviewed: 1, dueRemaining: 0, learnedNew: 2, newRemaining: 0, done: true });
+    expect([...newKeysOn(store.data.log, "2026-11-14")]).toEqual(["b#1", "c#1"]);
+  });
+
+  it("目標は残りの未学習の語の数までにする", () => {
+    const plan = todayPlan(vocabs, {}, [], "2026-11-14", 10);
+    expect(plan.newRemaining).toBe(4);
+  });
+
+  it("連続学習日数(今日まだでも昨日まで続いていれば数える、朝 4 時区切り)", () => {
+    const store = new RecordStore(new MemoryStorage());
+    store.recordAnswer("a#1", "correct", "word_to_meaning", at(11));
+    store.recordAnswer("a#1", "correct", "word_to_meaning", at(13, 2)); // 11/13 2時 → 11/12 の学習
+    store.recordAnswer("b#1", "correct", "word_to_meaning", at(13));
+    expect(streak(store.data.log, "2026-11-14")).toBe(3);
+    expect(streak(store.data.log, "2026-11-13")).toBe(3);
+    expect(streak(store.data.log, "2026-11-15")).toBe(0);
+    expect(streak([], "2026-11-14")).toBe(0);
+  });
+
+  it("今日の一語は日ごとに決まる", () => {
+    expect(wordOfDay(vocabs, "2026-11-14")).toBe(wordOfDay(vocabs, "2026-11-14"));
+    const days = Array.from({ length: 30 }, (_, i) => wordOfDay(vocabs, addDays("2026-11-01", i))!.key);
+    expect(new Set(days).size).toBeGreaterThan(1);
+    expect(wordOfDay([], "2026-11-14")).toBeUndefined();
+  });
+
+  it("習得状況の数とバックアップの注意", () => {
+    const store = new RecordStore(new MemoryStorage());
+    expect(daysSinceBackup(store.data, "2026-11-14")).toBeNull();
+    store.recordAnswer("a#1", "correct", "word_to_meaning", at(1));
+    expect(masteryCounts(vocabs, store.data.reviews)).toEqual({ 習得: 0, 定着中: 0, 学習中: 1, 未学習: 3 });
+    expect(daysSinceBackup(store.data, "2026-11-14")).toBe(13);
+    store.exportJson(at(10));
+    expect(daysSinceBackup(store.data, "2026-11-14")).toBe(4);
+    expect(new RecordStore(new MemoryStorage()).settings.dailyGoal).toBe(10);
   });
 });
 

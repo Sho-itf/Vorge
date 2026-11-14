@@ -1,4 +1,5 @@
 // 画面の切り替え(URL の # 以降で決める。GitHub Pages のサブパスでも動くように)。
+//   #/home         ホーム(最初に開く画面)
 //   #/cards        単語カード
 //   #/library      語彙ライブラリ
 //   #/library/鍵   語彙の詳細(一覧の上にポップアップで開く)
@@ -9,12 +10,14 @@ import { loadApp, type App } from "./app.ts";
 import { esc } from "./ui/dom.ts";
 import { leaveFlashcard, renderFlashcard } from "./ui/flashcard.ts";
 import { renderData } from "./ui/data.ts";
+import { renderHome } from "./ui/home.ts";
 import { renderLibrary } from "./ui/library.ts";
 
 const root = document.querySelector<HTMLElement>("#app")!;
 
 function route(app: App): void {
-  const [, page = "cards", arg] = location.hash.split("/");
+  const [, hashPage, arg] = location.hash.split("/");
+  const page = hashPage || "home";
   leaveFlashcard();
   document.querySelectorAll<HTMLAnchorElement>(".tabs a").forEach((a) =>
     a.classList.toggle("active", a.dataset.tab === page),
@@ -28,7 +31,8 @@ function route(app: App): void {
   }
   root.dataset.page = page;
   if (page === "data") renderData(root, app);
-  else renderFlashcard(root, app);
+  else if (page === "cards") renderFlashcard(root, app);
+  else renderHome(root, app);
   if (page !== "cards") window.scrollTo({ top: 0 });
 }
 
