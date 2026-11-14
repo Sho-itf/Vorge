@@ -42,6 +42,8 @@ export interface Settings {
   newLimit: number;
   shuffle: boolean;
   input: boolean;
+  /** 1 日の目標(新しく覚える語の数)。ホームで変える */
+  dailyGoal: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -51,6 +53,7 @@ export const DEFAULT_SETTINGS: Settings = {
   newLimit: 10,
   shuffle: true,
   input: false,
+  dailyGoal: 10,
 };
 
 export interface RecordData {
@@ -59,6 +62,8 @@ export interface RecordData {
   reviews: Record<string, ReviewState>;
   log: LogEntry[];
   settings: Settings;
+  /** 最後に記録を書き出した日時(ISO 形式)。バックアップの注意に使う */
+  lastExportAt?: string;
 }
 
 function emptyData(): RecordData {
@@ -95,6 +100,7 @@ export function parseRecord(text: string): RecordData {
     reviews: obj.reviews,
     log: obj.log,
     settings: { ...DEFAULT_SETTINGS, ...(obj.settings ?? {}) },
+    lastExportAt: typeof obj.lastExportAt === "string" ? obj.lastExportAt : undefined,
   };
 }
 
@@ -163,7 +169,10 @@ export class RecordStore {
     return this.data.log.filter((e) => logicalDate(new Date(e.at)) === day).length;
   }
 
-  exportJson(): string {
+  /** 書き出す JSON。書き出した日時も記録する(ホームのバックアップの注意に使う)。 */
+  exportJson(now: Date = new Date()): string {
+    this.data.lastExportAt = now.toISOString();
+    this.save();
     return JSON.stringify(this.data, null, 1);
   }
 
