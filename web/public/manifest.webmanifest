@@ -1,0 +1,16 @@
+{
+  "name": "Vorge 単語カード",
+  "short_name": "Vorge",
+  "description": "語彙を増やすための単語カードと語彙ライブラリ",
+  "lang": "ja",
+  "start_url": "./#/cards",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f5f1",
+  "theme_color": "#3d5a80",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

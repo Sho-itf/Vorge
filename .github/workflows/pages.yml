@@ -1,0 +1,52 @@
+# Web 版(web/)をビルドして GitHub Pages に公開する。
+# csv/ に語彙を足して main に push すると、語彙データも自動で作り直されて反映される。
+# 事前に GitHub のリポジトリ設定 → Pages → Source を「GitHub Actions」にしておく必要がある。
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", "csv/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: ライブラリのインストール
+        run: npm ci
+      - name: テスト(vitest)
+        run: npm test
+      - name: ビルド(CSV → 語彙データ、画面)
+        run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
