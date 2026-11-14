@@ -35,6 +35,12 @@ export function leaveFlashcard(): void {
   setKeys(null);
 }
 
+/** ホームの「今日の学習をはじめる」から、設定画面を通らずに出題を始める。 */
+export function startFlashcard(queue: string[], mode: Mode, input: boolean): void {
+  session = new Session(queue, mode, mode !== "word_to_meaning" && input);
+  location.hash = "#/cards";
+}
+
 export function renderFlashcard(root: HTMLElement, app: App): void {
   if (!session) renderSettings(root, app);
   else if (session.finished) renderSummary(root, app, session);
@@ -252,5 +258,12 @@ function renderSummary(root: HTMLElement, app: App, ss: Session): void {
     session = null;
     renderFlashcard(root, app);
   });
-  root.append(back);
+  const home = document.createElement("a");
+  home.className = "home-link";
+  home.href = "#/home";
+  home.textContent = "🏠 ホームへ";
+  home.addEventListener("click", () => {
+    session = null;
+  });
+  root.append(back, home);
 }
