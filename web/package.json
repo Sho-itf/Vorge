@@ -1,0 +1,24 @@
+{
+  "name": "vorge-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "vocab": "node scripts/build-vocab.ts",
+    "predev": "npm run vocab",
+    "dev": "vite",
+    "prebuild": "npm run vocab",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "~7.0.2",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
+  },
+  "dependencies": {
+    "ts-fsrs": "^6.0.0"
+  }
+}
