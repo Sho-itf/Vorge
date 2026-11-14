@@ -58,7 +58,11 @@ h3 { font-size: 0.85rem; color: var(--muted); margin: 1rem 0 0.3rem; font-weight
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line);
 }
-.brand { font-weight: 700; text-decoration: none; color: var(--text); white-space: nowrap; }
+.brand {
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  font-weight: 700; text-decoration: none; color: var(--text); white-space: nowrap;
+}
+.brand img { display: block; flex: none; }
 .tabs { display: flex; gap: 0.25rem; margin-left: auto; }
 .tabs a {
   text-decoration: none; color: var(--muted); padding: 0.35rem 0.75rem; border-radius: 999px; font-size: 0.95rem;
