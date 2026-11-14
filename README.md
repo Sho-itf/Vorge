@@ -92,13 +92,10 @@ npm test        # テスト(vitest)
 npm run build   # 公開用のファイルを web/dist に作る
 ```
 
-### GitHub Pages で公開する
+### GitHub Pages での公開
 
-このリポジトリでは設定済みで、main に push すると自動で更新されます。
-自分のリポジトリ(fork など)で公開したい場合の手順は次のとおりです。
-
-1. GitHub のリポジトリ → Settings → Pages → Source を「**GitHub Actions**」にする。
-2. main に push すると `.github/workflows/pages.yml` がビルドして公開します(Actions タブの「pages」で進み具合を確認)。
+公開は設定済みで、main に push すると `.github/workflows/pages.yml` が自動でビルドして更新します
+(設定は GitHub のリポジトリ → Settings → Pages → Source を「**GitHub Actions**」)。
 
 > **注意**:GitHub Pages のサイトは誰でも見られます。`csv/` の語彙・例文はすべて公開されます。
 > 学習の記録(各自のブラウザ内)と `data/`(Streamlit 版の DB)は公開物に含まれません。
