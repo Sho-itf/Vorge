@@ -1,7 +1,8 @@
-from datetime import date, datetime
+from datetime import datetime
 
 import pytest
 
+from vorge import timeutil
 from vorge.db import init_db
 from vorge.flashcard.repository import ReviewRepository
 from vorge.flashcard.scheduler import CORRECT, WRONG
@@ -64,7 +65,7 @@ def test_save_and_list_writings(repo, writing):
 
     assert [x.id for x in writing.list_writings(vocab_id=b)] == [wid]
     assert writing.usage_count(a) == 1 and writing.usage_count(b) == 0
-    assert writing.count_writings() == 1 and writing.count_writings_on(date.today()) == 1
+    assert writing.count_writings() == 1 and writing.count_writings_on(timeutil.today()) == 1
 
     writing.update_feedback(wid, "よく書けています")
     assert writing.get_writing(wid).feedback == "よく書けています"
