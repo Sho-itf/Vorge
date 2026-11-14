@@ -1,7 +1,7 @@
 // 画面の切り替え(URL の # 以降で決める。GitHub Pages のサブパスでも動くように)。
 //   #/cards        単語カード
 //   #/library      語彙ライブラリ
-//   #/library/鍵   語彙の詳細
+//   #/library/鍵   語彙の詳細(一覧の上にポップアップで開く)
 //   #/data         学習の記録(書き出し/取り込み)
 
 import "./style.css";
@@ -9,7 +9,7 @@ import { loadApp, type App } from "./app.ts";
 import { esc } from "./ui/dom.ts";
 import { leaveFlashcard, renderFlashcard } from "./ui/flashcard.ts";
 import { renderData } from "./ui/data.ts";
-import { renderLibrary, renderVocabDetail } from "./ui/library.ts";
+import { renderLibrary } from "./ui/library.ts";
 
 const root = document.querySelector<HTMLElement>("#app")!;
 
@@ -19,11 +19,17 @@ function route(app: App): void {
   document.querySelectorAll<HTMLAnchorElement>(".tabs a").forEach((a) =>
     a.classList.toggle("active", a.dataset.tab === page),
   );
-  if (page === "library" && arg) renderVocabDetail(root, app, decodeURIComponent(arg));
-  else if (page === "library") renderLibrary(root, app);
-  else if (page === "data") renderData(root, app);
+  if (page === "library") {
+    // ライブラリの中で詳細を開閉するときは、一覧をそのまま残す(スクロール位置も保つ)
+    const stay = root.dataset.page === "library";
+    renderLibrary(root, app, arg ? decodeURIComponent(arg) : null);
+    if (!stay) window.scrollTo({ top: 0 });
+    return;
+  }
+  root.dataset.page = page;
+  if (page === "data") renderData(root, app);
   else renderFlashcard(root, app);
-  if (!(page === "cards")) window.scrollTo({ top: 0 });
+  if (page !== "cards") window.scrollTo({ top: 0 });
 }
 
 async function main(): Promise<void> {
