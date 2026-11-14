@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { blanksFor, findBlank, matchesWord, wordVariants } from "../src/lib/blank.ts";
 import { csvRecords, parseCsv } from "../src/lib/csv.ts";
 import { addDays, daysBetween, logicalDate } from "../src/lib/day.ts";
+import { searchVocabs, senseNumber, synonymGroup, type LibraryQuery } from "../src/lib/library.ts";
 import { buildQueue, dueKeys, newKeys, Session } from "../src/lib/queue.ts";
 import { configure, intervalText, masteryLabel, preview, review } from "../src/lib/scheduler.ts";
 import { BEFORE_IMPORT_KEY, RecordStore, STORAGE_KEY, type KeyValueStorage } from "../src/lib/store.ts";
@@ -20,7 +21,7 @@ class MemoryStorage implements KeyValueStorage {
 function vocab(word: string, extra: Partial<Vocab> = {}): Vocab {
   return {
     key: `${word}#1`, word, reading: "", meaning: `${word}の意味`, examples: [], nuance: "",
-    synonyms: [], antonyms: [], collocations: [], category: "A", difficulty: 3, ...extra,
+    synonyms: [], antonyms: [], collocations: [], category: "A", difficulty: 3, source: "", ...extra,
   };
 }
 
@@ -159,6 +160,49 @@ describe("出題の選び方", () => {
     expect(s.isRetry()).toBe(true);
     s.stop();
     expect(s.finished).toBe(true);
+  });
+});
+
+describe("語彙ライブラリの検索", () => {
+  const vocabs = [
+    vocab("俯瞰", { reading: "ふかん", examples: ["全体を俯瞰する"], synonyms: ["概観"], difficulty: 3 }),
+    vocab("概観", { reading: "がいかん", difficulty: 2, category: "B" }),
+    vocab("鳥瞰", { reading: "ちょうかん", synonyms: ["俯瞰"], difficulty: 4, source: "自作" }),
+  ];
+  const byWord = new Map(vocabs.map((v) => [v.word, [v.key]]));
+  const byKey = new Map(vocabs.map((v) => [v.key, v]));
+  const q = (patch: Partial<LibraryQuery> = {}): LibraryQuery => ({
+    keyword: "", categories: [], mastery: [], difficulty: [1, 5], sort: "ID順", ...patch,
+  });
+  const words = (list: Vocab[]) => list.map((v) => v.word);
+
+  it("スペース区切りは AND 検索、例文や出典も探す", () => {
+    expect(words(searchVocabs(vocabs, {}, q({ keyword: "全体 俯瞰" })))).toEqual(["俯瞰"]);
+    expect(words(searchVocabs(vocabs, {}, q({ keyword: "全体　概観" })))).toEqual(["俯瞰"]); // 類義語も探す
+    expect(words(searchVocabs(vocabs, {}, q({ keyword: "全体　鳥瞰" })))).toEqual([]);
+    expect(words(searchVocabs(vocabs, {}, q({ keyword: "自作" })))).toEqual(["鳥瞰"]);
+  });
+
+  it("カテゴリ・難易度・習得状況で絞り込む", () => {
+    expect(words(searchVocabs(vocabs, {}, q({ categories: ["B"] })))).toEqual(["概観"]);
+    expect(words(searchVocabs(vocabs, {}, q({ difficulty: [3, 4] })))).toEqual(["俯瞰", "鳥瞰"]);
+    const store = new RecordStore(new MemoryStorage());
+    store.recordAnswer("概観#1", "correct", "word_to_meaning", new Date(2026, 10, 14, 12));
+    expect(words(searchVocabs(vocabs, store.data.reviews, q({ mastery: ["学習中"] })))).toEqual(["概観"]);
+    expect(words(searchVocabs(vocabs, store.data.reviews, q({ mastery: ["未学習"] })))).toEqual(["俯瞰", "鳥瞰"]);
+  });
+
+  it("並び順", () => {
+    expect(words(searchVocabs(vocabs, {}, q({ sort: "読み順" })))).toEqual(["概観", "鳥瞰", "俯瞰"]);
+    expect(words(searchVocabs(vocabs, {}, q({ sort: "新しい順" })))).toEqual(["鳥瞰", "概観", "俯瞰"]);
+    expect(words(searchVocabs(vocabs, {}, q({ sort: "難易度(難→易)" })))).toEqual(["鳥瞰", "俯瞰", "概観"]);
+  });
+
+  it("類義語は片方にしか書いていなくてもつながる", () => {
+    expect(words(synonymGroup(vocabs[0], vocabs, byWord, byKey))).toEqual(["俯瞰", "概観", "鳥瞰"]);
+    expect(words(synonymGroup(vocabs[1], vocabs, byWord, byKey))).toEqual(["概観", "俯瞰"]);
+    expect(senseNumber(vocabs[0], new Map([["俯瞰", ["x#1", "俯瞰#1"]]]))).toBe(2);
+    expect(senseNumber(vocabs[0], byWord)).toBeNull();
   });
 });
 
