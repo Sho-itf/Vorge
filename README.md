@@ -6,6 +6,9 @@
 「覚える → 確かめる → 使う → 振り返る」を 1 つのアプリで回せます。
 設計の詳細は [docs/design.md](docs/design.md) を参照してください。
 
+**公開サイト(Web 版・単語カードと語彙ライブラリ):<https://sho-itf.github.io/Vorge/>**
+インストール不要で、PC・スマホのブラウザからそのまま使えます。
+
 ## できること
 
 **学習**
@@ -61,7 +64,7 @@ PC で起動している間は、同じ Wi-Fi のスマホのブラウザから�
 ## Web 版(単語カードと語彙ライブラリだけ)
 
 PC を起動していなくてもスマホなどから使えるよう、`web/` に**サーバー不要の Web 版**があります。
-GitHub Pages に置くと、`https://<ユーザー名>.github.io/Vorge/` のような URL でいつでも開けます。
+GitHub Pages で公開していて、<https://sho-itf.github.io/Vorge/> からいつでも開けます。
 
 - できること:ホーム(今日の学習と 1 日の目標・連続学習日数・今日の一語・習得状況・バックアップの注意)、
   単語カード(語彙 → 意味 / 意味 → 語彙 / 例文の穴埋め、入力式、4 段階の採点、FSRS)と語彙ライブラリ(検索・絞り込み・詳細)。
@@ -83,6 +86,9 @@ npm run build   # 公開用のファイルを web/dist に作る
 ```
 
 ### GitHub Pages で公開する
+
+このリポジトリでは設定済みで、main に push すると自動で更新されます。
+自分のリポジトリ(fork など)で公開したい場合の手順は次のとおりです。
 
 1. GitHub のリポジトリ → Settings → Pages → Source を「**GitHub Actions**」にする。
 2. main に push すると `.github/workflows/pages.yml` がビルドして公開します(Actions タブの「pages」で進み具合を確認)。
