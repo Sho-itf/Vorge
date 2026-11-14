@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="語彙を増やすための単語カードと語彙ライブラリ" />
+    <meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#17181b" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <title>Vorge</title>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#/cards">📚 Vorge</a>
+      <nav class="tabs" aria-label="メニュー">
+        <a href="#/cards" data-tab="cards">単語カード</a>
+        <a href="#/library" data-tab="library">ライブラリ</a>
+        <a href="#/data" data-tab="data">記録</a>
+      </nav>
+    </header>
+    <main id="app"></main>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
