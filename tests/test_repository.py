@@ -1,5 +1,4 @@
-from datetime import date
-
+from vorge import timeutil
 from vorge.vocab.models import Vocab
 
 
@@ -55,7 +54,7 @@ def test_new_category_is_registered(repo):
 
 def test_count_added_today(repo):
     repo.add(make())
-    assert repo.count_added_on(date.today()) == 1
+    assert repo.count_added_on(timeutil.today()) == 1
 
 
 def test_import_skips_existing_ids_by_default(repo):

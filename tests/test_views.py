@@ -4,7 +4,6 @@
 本物の DB には触れず、テストごとに一時フォルダの DB を使う。
 """
 
-from datetime import date
 from pathlib import Path
 
 import pytest
@@ -176,7 +175,7 @@ def test_flashcard_wrong_answer_comes_back_once_without_recording(app):
     click(app, "✅ 正解")
     assert len(app.session_state["fc_results"]) == 1  # 2 回目は記録しない
     assert app.session_state["fc_retry_results"] == ["correct"]
-    assert ReviewRepository(config.DB_PATH).count_answers_on(date.today()) == 1
+    assert ReviewRepository(config.DB_PATH).count_answers_on(timeutil.today()) == 1
 
 
 def test_quiz_report_bad_question(app):
